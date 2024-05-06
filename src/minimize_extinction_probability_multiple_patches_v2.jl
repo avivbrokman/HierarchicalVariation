@@ -12,18 +12,6 @@ using ArgParse
 using JSON
 
 
-## carries global parameter values (from command line?)
-@with_kw struct GlobalParams
-    delta::Float64
-    alpha1::Float64
-    beta1::Float64
-    alpha2::Float64
-    beta2::Float64
-    p1::Float64
-    fecundity::Int64
-    population_size::Int64
-    partition_mutation_rate::Float64
-end
 
 ## segmenting (0,1) by how many offspring survive in the patch for a given environmental value
 function survival_interval(center, delta)
@@ -175,12 +163,12 @@ function get_extinction_prob(centers, partition, delta, alpha1, beta1, alpha2, b
 end
 
 ## using a closure as a workaround because DE's objective function must take a single vector as input
-function make_objective_function(params::GlobalParams, idx2partition)
+function make_objective_function(fecundity, delta, alpha1, beta1, alpha2, beta2, p1, idx2partition)
     function objective_function(vars)
-        centers = vars[1:params.fecundity]
+        centers = vars[1:fecundity]
         partition_idx = vars[end]
         partition = idx2partition[partition_idx]
-        extinction_prob = get_extinction_prob(centers, partition, params.delta, params.alpha1, params.beta1, params.alpha2, params.beta2, params.p1, params.fecundity)
+        extinction_prob = get_extinction_prob(centers, partition, delta, alpha1, beta1, alpha2, beta2, p1, fecundity)
         return extinction_prob
     end
 
@@ -249,29 +237,27 @@ function main()
     args = parse_args(s)  # This function parses the command line arguments based on the specified settings
 
 
-    params = GlobalParams(delta = args["delta"], alpha1 = args["alpha1"], beta1 = args["beta1"], alpha2 = args["alpha2"], beta2 = args["beta2"], p1 = args["p1"], fecundity = args["fecundity"], population_size = args["population_size"], partition_mutation_rate = args["partition_mutation_rate"])
+    idx2partition = get_idx2partition(args["fecundity"])
 
-    idx2partition = get_idx2partition(params.fecundity)
+    objective_function = make_objective_function(args["fecundity"], args["delta"], args["alpha1"], args["beta1"], args["alpha2"], args["beta2"], args["p1"], idx2partition)
 
-    objective_function = make_objective_function(params, idx2partition)
+    initial_population = initialize_population(args["population_size"], args["fecundity"], idx2partition)
+    custom_differentiation = create_custom_differentiation(args["fecundity"], args["partition_mutation_rate"], idx2partition)
 
-    initial_population = initialize_population(params.population_size, params.fecundity, idx2partition)
-    custom_differentiation = create_custom_differentiation(params.fecundity, params.partition_mutation_rate, idx2partition)
-
-    lower_constraint = fill(0.0, params.fecundity)
-    upper_constraint = fill(1.0, params.fecundity)
+    lower_constraint = fill(0.0, args["fecundity"])
+    upper_constraint = fill(1.0, args["fecundity"])
 
     lower_constraint = [lower_constraint; float(minimum(keys(idx2partition)))]
     upper_constraint = [upper_constraint; float(maximum(keys(idx2partition)))]
 
     constraints = BoxConstraints(lower_constraint, upper_constraint)
 
-    de_algorithm = DE(populationSize = params.population_size, differentiation = custom_differentiation)
+    de_algorithm = DE(populationSize = args["population_size"], differentiation = custom_differentiation)
 
     results = CustomEvolutionary1.optimize(objective_function, constraints, de_algorithm, initial_population, CustomEvolutionary1.Options())
 
     # output
-    centers = results.minimizer[1:params.fecundity]
+    centers = results.minimizer[1:args["fecundity"]]
     partition = idx2partition[results.minimizer[end]]
     extinction_probability = results.minimum
 
