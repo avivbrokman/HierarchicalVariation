@@ -9,15 +9,7 @@ using Parameters
 using Combinatorics
 using Random
 using ArgParse
-
-
-##
-# Function to print a partition for clarity
-# function print_partition(partition)
-#     println([collect(subset) for subset in partition])
-# end
-
-
+using JSON
 
 
 ## carries global parameter values (from command line?)
@@ -32,12 +24,6 @@ using ArgParse
     population_size::Int64
     partition_mutation_rate::Float64
 end
-
-## Individual
-# struct Individual
-#     centers::Vector{Float64}
-#     partition::Vector{Vector{Int}}
-# end
 
 ## segmenting (0,1) by how many offspring survive in the patch for a given environmental value
 function survival_interval(center, delta)
@@ -220,145 +206,100 @@ function initialize_population(population_size, fecundity, idx2partition)
 
     return initial_population
 end
-
-
-# function create_custom_differentiation(fecundity, partition_mutation_rate, idx2partition)
-#     # function customDifferentiation(recombinant::T, mutators::AbstractVector{T}; F::Real = 1.0) where {T <: AbstractVector}
-#     function custom_differentiation(recombinant::T, mutators::AbstractVector{T}; F = 1.0, rng = default_rng()) where {T <: AbstractVector}
-
-       
-#         m = length(mutators)
-#         @assert m % 2 == 0 "Must be an even number of target mutators"
-        
-#         for i in 1:2:m
-#             recombinant[1:fecundity] .+= F .* (mutators[i][1:fecundity] .- mutators[i + 1][1:fecundity])
-#         end
-
-#         # Handle partition stuff
-#         # all_partitions = collect(Combinatorics.partitions(elements))
-
-#         recombinant[end] = rand() < partition_mutation_rate ? rand(keys(idx2partition)) : recombinant[end]
-#         return recombinant
-#     end
-#     return custom_differentiation
-# end
-
-# function original_update_state!(args...; kwargs...)
-#     Evolutionary.update_state!(args...; kwargs...)
-# end
-
-
-# struct CustomDEWrapper
-#     de: Evolutionary.DE  # The original DE method
-#     differentiation: Function  # Your custom differentiation function
-# end
-
-
-
-
-# function Evolutionary.custom_update_state!(objfun, constraints, state, population::AbstractVector{IT}, method::CustomDEWrapper, options, itr) where {IT}
-
-#     # setup
-#     Np = method.de.populationSize
-#     n = method.de.n
-#     F = method.de.F
-#     rng = options.rng
-
-#     offspring = Array{IT}(undef, Np)
-
-#     # select base vectors
-#     bases = method.de.selection(state.fitness, Np)
-
-#     # select target vectors
-#     for (i,b) in enumerate(bases)
-#         # mutation
-#         base = population[b]
-#         offspring[i] = copy(base)
-#         # println("$i => base:", offspring[i])
-
-#         targets = randexcl(rng, 1:Np, [i], 2*n)
-#         offspring[i] = method.differentiation(offspring[i], @view population[targets]; F=F)
-#         # println("$i => mutated:", offspring[i], ", targets:", targets)
-
-#         # recombination
-#         offspring[i], _ = method.de.recombination(offspring[i], base, rng=rng)
-#         # println("$i => recombined:", offspring[i])
-#     end
-
-#     # Create new generation
-#     fitidx = 0
-#     minfit = Inf
-#     for i in 1:Np
-#         o = apply!(constraints, offspring[i])
-#         v = value(objfun, o) + penalty(constraints, o)
-#         if (v <= state.fitness[i])
-#             population[i] = o
-#             state.fitness[i] = v
-#             if v < minfit
-#                 minfit = v
-#                 fitidx = i
-#             end
-#         end
-#     end
-
-#     # set best individual
-#     if fitidx > 0
-#         state.fittest = population[fitidx]
-#     end
-
-#     return false
-# end
-
-
-
-
-# function create_custom_constraints(fecundity)
-#     function custom_constraint(x)
-#         # Apply scalar constraints to the first four parameters
-#         for i in 1:fecundity
-#             x[i] = clamp(x[i], 0, 1)  
-#         end
-#         return x
-#     end
-#     return custom_constraint
-# end
-
-# struct CustomConstraints <: Evolutionary.AbstractConstraints
-#     fecundity::Int
-#     lower::Float64
-#     upper::Float64
-# end
-
-
-## Run the DE algorithm
-# result = Evolutionary.optimize(fitness, initial_population, DE(customMutation; cr=0.8), options)
-
+    
 
 function main()
     s = ArgParseSettings()  # Create a settings object
 
     @add_arg_table s begin
-        "input"
-            help = "input file"
+        "--fecundity"
+            arg_type = Int64
             required = true
+        "--delta"
+            arg_type = Float64
+            required = true
+        "--alpha1"
+            arg_type = Float64
+            required = true
+        "--beta1"
+            arg_type = Float64
+            required = true
+        "--alpha2"
+            arg_type = Float64
+            required = true
+        "--beta2"
+            arg_type = Float64
+            required = true
+        "--p1"
+            arg_type = Float64
+            required = true
+        "--save_dir"
             arg_type = String
-        "--output", "-o"
-            help = "output file"
-            default = "out.txt"  # Default value if not specified
-            arg_type = String
-        "--verbose", "-v"
-            help = "print more verbose output"
-            action = :store_true  # This makes it a boolean flag
+            required = true
+        "--population_size"
+            arg_type = Int64
+            required = false
+            default = 100
+        "--partition_mutation_rate"
+            arg_type = Float64
+            required = false
+            default = 0.2
     end
 
-    parsed_args = parse_args(s)  # This function parses the command line arguments based on the specified settings
-    println("Input file: ", parsed_args["input"])
-    println("Output file: ", parsed_args["output"])
-    if parsed_args["verbose"]
-        println("Verbose mode is on.")
-    else
-        println("Verbose mode is off.")
+    args = parse_args(s)  # This function parses the command line arguments based on the specified settings
+
+
+    params = GlobalParams(delta = args["delta"], alpha1 = args["alpha1"], beta1 = args["beta1"], alpha2 = args["alpha2"], beta2 = args["beta2"], p1 = args["p1"], fecundity = args["fecundity"], population_size = args["population_size"], partition_mutation_rate = args["partition_mutation_rate"])
+
+    idx2partition = get_idx2partition(params.fecundity)
+
+    objective_function = make_objective_function(params, idx2partition)
+
+    initial_population = initialize_population(params.population_size, params.fecundity, idx2partition)
+    custom_differentiation = create_custom_differentiation(params.fecundity, params.partition_mutation_rate, idx2partition)
+
+    lower_constraint = fill(0.0, params.fecundity)
+    upper_constraint = fill(1.0, params.fecundity)
+
+    lower_constraint = [lower_constraint; float(minimum(keys(idx2partition)))]
+    upper_constraint = [upper_constraint; float(maximum(keys(idx2partition)))]
+
+    constraints = BoxConstraints(lower_constraint, upper_constraint)
+
+    de_algorithm = DE(populationSize = params.population_size, differentiation = custom_differentiation)
+
+    results = CustomEvolutionary1.optimize(objective_function, constraints, de_algorithm, initial_population, CustomEvolutionary1.Options())
+
+    # output
+    centers = results.minimizer[1:params.fecundity]
+    partition = idx2partition[results.minimizer[end]]
+    extinction_probability = results.minimum
+
+    output = Dict("fecundity" => args["fecundity"],
+                  "delta" => args["delta"],
+                  "alpha1" => args["alpha1"],
+                  "beta1" => args["beta1"],
+                  "alpha2" => args["alpha2"],
+                  "beta2" => args["beta2"],
+                  "p1" => args["p1"],
+                  "centers" => centers,
+                  "partition" => partition,
+                  "extinction_probability" => extinction_probability
+                  )
+    
+    # saving
+    # Convert the dictionary to JSON format
+    json_data = JSON.json(output)
+
+    # Save the JSON string to a file
+    save_dir = "output/" * args["save_dir"]
+    mkpath(save_dir)
+
+    open(save_dir * "/" * "output.json", "w") do file
+        write(file, json_data)
     end
+    
+    return output
 end
 
 # This conditional ensures that the script runs main only if it is not being included as a module
@@ -368,41 +309,6 @@ end
 
 
 
-# running
-params = GlobalParams(delta = 0.1, alpha1 = 0.7, beta1 = 0.3, alpha2 = 0.3, beta2 = 0.7, p1 = 0.5, fecundity = 4, population_size = 100, partition_mutation_rate = 0.2)
-
-idx2partition = get_idx2partition(params.fecundity)
-
-objective_function = make_objective_function(params, idx2partition)
-
-initial_population = initialize_population(params.population_size, params.fecundity, idx2partition)
-custom_differentiation = create_custom_differentiation(params.fecundity, params.partition_mutation_rate, idx2partition)
-# update_state! = create_custom_update_state(mixed_mutation)
-
-
-
-lower_constraint = fill(0.0, params.fecundity)
-upper_constraint = fill(1.0, params.fecundity)
-
-lower_constraint = [lower_constraint; float(minimum(keys(idx2partition)))]
-upper_constraint = [upper_constraint; float(maximum(keys(idx2partition)))]
-
-constraints = BoxConstraints(lower_constraint, upper_constraint)
-# constraints = CustomConstraints(4, 0.0, 1.0)
-
-
-# de_algorithm = CustomDE(populationSize = params.population_size)
-# de_algorithm = CustomDEWrapper(populationSize = params.population_size)
-de_algorithm = DE(populationSize = params.population_size, differentiation = custom_differentiation)
-# update_state!(objfun, constraints, state, population, de_algorithm, options, itr) = custom_update_state!(objfun, constraints, state, population, de_algorithm, options, itr)
-
-# result = Evolutionary.optimize(objective_function, initial_population, de_algorithm, Evolutionary.Options())
-# result = Evolutionary.optimize(objective_function, constraints, de_algorithm, initial_population, Evolutionary.Options())
-result = CustomEvolutionary1.optimize(objective_function, constraints, de_algorithm, initial_population, CustomEvolutionary1.Options())
-
-# output = Evolutionary.optimize(f = objective_function, population = initial_population, constraints = constraints, method = de_algorithm)
-    
-print(result)
 
 
 
