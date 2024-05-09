@@ -12,8 +12,12 @@ module ExtinctionMultipatch
     using Random
     using JSON
     using JSON:json
+    using Optimization
+    using OptimizationOptimJL
+    using ForwardDiff
 
-    export initialize_population, get_idx2partition, make_objective_function, create_custom_differentiation, BoxConstraints, DE, optimize, json
+
+    export initialize_population, get_idx2partition, make_objective_function, create_custom_differentiation, BoxConstraints, DE, optimize, json, survival_prob, maximize_survival_prob, educated_guess, minimize_extinction_probability
 
     ## segmenting (0,1) by how many offspring survive in the patch for a given environmental value
     function survival_interval(center, delta)
@@ -197,4 +201,110 @@ module ExtinctionMultipatch
         return initial_population
     end
 
+    function survival_prob(center, delta, alpha, beta)
+        dist = Beta(alpha, beta)
+        return cdf(dist, center + delta) - cdf(dist, center - delta)
+    end
+
+    function maximize_survival_prob(delta, alpha, beta)
+        
+        objective = center -> -survival_prob(center, delta, alpha, beta)
+        
+        if alpha > 0 && beta > 0
+            if alpha == beta
+                best = 0.5
+            else
+                dist = Beta(alpha, beta)
+                guess = mode(dist)
+                guess = clamp(guess, delta/2, 1-delta/2)
+                # constraints = [delta/2,1 - delta/2]
+                optf = OptimizationFunction(objective, Optimization.AutoForwardDiff())
+                problem = OptimizationProblem(optf, guess, lb = delta/2, ub = 1 - delta/2)
+                solution = solve(problem, LBFGS())
+                best = solution.u
+            end
+        elseif alpha > beta
+            best = 1 - delta/2
+        elseif beta < alpha
+            best = 1 + delta/2
+        elseif alpha == beta < 1
+            @warn "two best: delta/2 and 1 - delta/2"
+            best = nothing
+        elseif alpha == beta == 1
+            @warn "std uniform dist"
+            best = nothing
+        end
+    return best
+    end        
+        
+    function educated_guess(optimized, delta, alpha1, beta1, alpha2, beta2, p1)
+        best1 = maximize_survival_prob(delta, alpha1, beta1)
+        best2 = maximize_survival_prob(delta, alpha2, beta2)
+
+        if isnothing(best)
+            return nothing
+        else
+            distance1 = abs(optimized - best1)
+            distance2 = abs(optimized - best2)
+
+            best_idx = argmin([distance1, distance2])
+            guess = [best1, best2][best_idx]
+
+            return guess
+        end
+    end
+
+    function minimize_extinction_probability(fecundity, delta, alpha1, beta1, alpha2, beta2, p1, save_dir, population_size, partition_mutation_rate)
+
+        idx2partition = get_idx2partition(fecundity)
+
+        objective_function = make_objective_function(fecundity, delta, alpha1, beta1, alpha2, beta2, p1, idx2partition)
+
+        initial_population = initialize_population(population_size, fecundity, idx2partition)
+        custom_differentiation = create_custom_differentiation(fecundity, partition_mutation_rate, idx2partition)
+
+        lower_constraint = fill(0.0, fecundity)
+        upper_constraint = fill(1.0, fecundity)
+
+        lower_constraint = [lower_constraint; float(minimum(keys(idx2partition)))]
+        upper_constraint = [upper_constraint; float(maximum(keys(idx2partition)))]
+
+        constraints = BoxConstraints(lower_constraint, upper_constraint)
+
+        de_algorithm = DE(populationSize = population_size, differentiation = custom_differentiation)
+
+        results = optimize(objective_function, constraints, de_algorithm, initial_population)
+
+        # output
+        centers = results.minimizer[1:fecundity]
+        partition = idx2partition[results.minimizer[end]]
+        extinction_probability = results.minimum
+
+        output = Dict("fecundity" => fecundity,
+                    "delta" => delta,
+                    "alpha1" => alpha1,
+                    "beta1" => beta1,
+                    "alpha2" => alpha2,
+                    "beta2" => beta2,
+                    "p1" => p1,
+                    "centers" => centers,
+                    "partition" => partition,
+                    "extinction_probability" => extinction_probability
+                    )
+        
+        # saving
+        # Convert the dictionary to JSON format
+        json_data = json(output)
+
+        # Save the JSON string to a file
+        save_dir = "output/" * save_dir
+        mkpath(save_dir)
+
+        open(save_dir * "/" * "output.json", "w") do file
+            write(file, json_data)
+        end
+
+        return output
+    end
+    
 end

@@ -97,9 +97,55 @@ function main()
     return output
 end
 
+function main_simple()
+
+    s = ArgParseSettings()  # Create a settings object
+
+    @add_arg_table s begin
+        "--fecundity"
+            arg_type = Int64
+            required = true
+        "--delta"
+            arg_type = Float64
+            required = true
+        "--alpha1"
+            arg_type = Float64
+            required = true
+        "--beta1"
+            arg_type = Float64
+            required = true
+        "--alpha2"
+            arg_type = Float64
+            required = true
+        "--beta2"
+            arg_type = Float64
+            required = true
+        "--p1"
+            arg_type = Float64
+            required = true
+        "--save_dir"
+            arg_type = String
+            required = true
+        "--population_size"
+            arg_type = Int64
+            required = false
+            default = 100
+        "--partition_mutation_rate"
+            arg_type = Float64
+            required = false
+            default = 0.2
+    end
+
+    args = parse_args(s)
+
+    return minimize_extinction_probability(args["fecundity"], args["delta"], args["alpha1"], args["beta1"],args["alpha2"], args["beta2"], args["p1"], args["save_dir"], args["population_size"], args["partition_mutation_rate"])
+
+end
+
 # This conditional ensures that the script runs main only if it is not being included as a module
 if abspath(PROGRAM_FILE) == @__FILE__
-    main()
+    # main()
+    main_simple()
 end
 
 
