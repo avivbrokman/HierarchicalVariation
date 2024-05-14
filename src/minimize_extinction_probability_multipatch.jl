@@ -134,11 +134,15 @@ function main_simple()
             arg_type = Float64
             required = false
             default = 0.2
+        "--use_educated_guess"
+            arg_type = Bool
+            required = false
+            default = true
     end
 
     args = parse_args(s)
 
-    return minimize_extinction_probability(args["fecundity"], args["delta"], args["alpha1"], args["beta1"],args["alpha2"], args["beta2"], args["p1"], args["save_dir"], args["population_size"], args["partition_mutation_rate"])
+    return minimize_extinction_probability(args["fecundity"], args["delta"], args["alpha1"], args["beta1"],args["alpha2"], args["beta2"], args["p1"], args["save_dir"], args["population_size"], args["partition_mutation_rate"], args["use_educated_guess"])
 
 end
 

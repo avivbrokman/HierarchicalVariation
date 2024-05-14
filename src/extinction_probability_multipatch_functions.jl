@@ -17,7 +17,7 @@ module ExtinctionMultipatch
     using ForwardDiff
 
 
-    export initialize_population, get_idx2partition, make_objective_function, create_custom_differentiation, BoxConstraints, DE, optimize, json, survival_prob, maximize_survival_prob, educated_guess, minimize_extinction_probability
+    export initialize_population, get_idx2partition, make_objective_function, create_custom_differentiation, BoxConstraints, DE, optimize, json, survival_prob, maximize_survival_prob, educated_guess, minimize_extinction_probability, get_extinction_prob, survival_interval, get_survival_intervals, segment_unit_interval_by_survival_overlap, get_segment_survival_counts, get_segment_probability, get_segment_probabilities, get_probabilities_in_patch_given_H, get_probabilities, probabilities2extinction_coefficients!, get_extinction_prob_from_coefficients, get_probabilities_given_H
 
     ## segmenting (0,1) by how many offspring survive in the patch for a given environmental value
     function survival_interval(center, delta)
@@ -29,7 +29,6 @@ module ExtinctionMultipatch
     function get_survival_intervals(centers, delta)
         return [survival_interval(el, delta) for el in centers]
     end
-
 
     function segment_unit_interval_by_survival_overlap(intervals)
         endpoint_pairs = [[el.first, el.last] for el in intervals]
@@ -206,6 +205,12 @@ module ExtinctionMultipatch
         return cdf(dist, center + delta) - cdf(dist, center - delta)
     end
 
+    function survival_prob(center, delta, alpha1, beta1, alpha2, beta2, p1)
+        dist = MixtureModel(Beta, [(alpha1, beta1), (alpha2, beta2)], [p1, 1-p1])
+
+        return cdf(dist, center + delta) - cdf(dist, center - delta)
+    end
+
     function maximize_survival_prob(delta, alpha, beta)
         
         objective = center -> -survival_prob(center, delta, alpha, beta)
@@ -213,6 +218,7 @@ module ExtinctionMultipatch
         if alpha > 0 && beta > 0
             if alpha == beta
                 best = 0.5
+                desc = "best"
             else
                 dist = Beta(alpha, beta)
                 guess = mode(dist)
@@ -222,39 +228,108 @@ module ExtinctionMultipatch
                 problem = OptimizationProblem(optf, guess, lb = delta/2, ub = 1 - delta/2)
                 solution = solve(problem, LBFGS())
                 best = solution.u
+                desc = "best"
             end
+        elseif 1 > alpha > beta
+            best = 1 - delta/2, delta/2
+            desc = "best", "good"
+        elseif 1 > beta > alpha
+            best = delta/2, 1 -  delta/2
+            desc = "best", "good"
         elseif alpha > beta
             best = 1 - delta/2
+            desc = "best"
         elseif beta < alpha
-            best = 1 + delta/2
+            best = delta/2
+            desc = "best"
         elseif alpha == beta < 1
             @warn "two best: delta/2 and 1 - delta/2"
-            best = nothing
+            best = delta/2, 1 - delta/2
+            desc = "best", "best"
         elseif alpha == beta == 1
             @warn "std uniform dist"
             best = nothing
+            desc = nothing
         end
-    return best
-    end        
-        
-    function educated_guess(optimized, delta, alpha1, beta1, alpha2, beta2, p1)
-        best1 = maximize_survival_prob(delta, alpha1, beta1)
-        best2 = maximize_survival_prob(delta, alpha2, beta2)
+    return best, desc
+    end
+    
+    function near_mode_for_beta_mixture(alpha1, beta1, alpha2, beta2, p1)
+        dist = MixtureModel(Beta, [(alpha1, beta1), (alpha2, beta2)], [p1, 1-p1])
 
-        if isnothing(best)
-            return nothing
-        else
-            distance1 = abs(optimized - best1)
-            distance2 = abs(optimized - best2)
+        sample = [pdf(dist, el) for el in 0:0.01:1]
 
-            best_idx = argmin([distance1, distance2])
-            guess = [best1, best2][best_idx]
-
-            return guess
-        end
+        return sample[argmax(sample)]
     end
 
-    function minimize_extinction_probability(fecundity, delta, alpha1, beta1, alpha2, beta2, p1, save_dir, population_size, partition_mutation_rate)
+    function maximize_survival_prob(delta, alpha1, beta1, alpha2, beta2, p1)
+        
+        objective = center -> -survival_prob(center, delta, alpha1, beta1, alpha2, beta2, p1)
+
+        if alpha1 == beta1 == alpha2 == beta2 == 1 || (alpha1 == beta1 == 1 && p1 == 1) || (alpha1 == beta2 == 2 && alpha2 == beta1 == 0.5) # uniform dist
+            # all centers equal
+            @warn "Std Uniform distribution"
+            best = nothing
+        else 
+            dist = MixtureModel(Beta, [(alpha1, beta1), (alpha2, beta2)], [p1, 1-p1])
+            guess = near_mode_for_beta_mixture(alpha1, beta1, alpha2, beta2, p1)
+            guess = clamp(guess, delta/2, 1-delta/2)
+            optf = OptimizationFunction(objective, Optimization.AutoForwardDiff())
+            problem = OptimizationProblem(optf, guess, lb = delta/2, ub = 1 - delta/2)
+            solution = solve(problem, LBFGS())
+            best = solution.u
+        end
+    return best
+    end     
+
+    function diverse_push!(vector, value)
+        if value isa Float64
+            push!(vector, value)
+        else
+            push!(vector, value[1])
+            push!(vector, value[2])
+        end
+    end
+        
+    function educated_guess(optimized, delta, alpha1, beta1, alpha2, beta2, p1)
+        candidates = Float64[]
+        descriptions = String[]
+        
+        # maximize surv porb in single distributions
+        candidates1, descriptions1 = maximize_survival_prob(delta, alpha1, beta1)
+        candidates2, descriptions2 = maximize_survival_prob(delta, alpha2, beta2)
+        
+        diverse_push!(candidates, candidates1)
+        diverse_push!(descriptions, descriptions1)
+        diverse_push!(candidates, candidates2)
+        diverse_push!(descriptions, descriptions2)
+
+        # maximize surv prob in mixture dist
+        candidate3 = maximize_survival_prob(delta, alpha1, beta1, alpha2, beta2, p1)
+        description3 = "mean_max"
+        push!(candidates, candidate3)
+        push!(descriptions, description3)
+        
+        # might have eq surv prob to candidate3 in mixture dist or may be local max
+        candidate4 = 1 - best3
+        description4 = "mean_max_complement"
+        push!(candidates, candidate4)
+        push!(descriptions, description4)
+
+        distances = Float64[]
+        guess_types = String[]
+        for (el_cand, el_desc) in zip(candidates, descriptions)
+            push!(distances, abs(optimized - el_cand))
+            push!(guess_types, el_desc)
+        end
+        best_idx = argmin(distances)
+        guess = candidates[best_idx]
+        guess_type = guess_types[best_idx]
+
+        return guess, guess_type
+    end
+
+    function minimize_extinction_probability(fecundity, delta, alpha1, beta1, alpha2, beta2, p1, save_dir, population_size, partition_mutation_rate, use_educated_guess)
 
         idx2partition = get_idx2partition(fecundity)
 
@@ -263,8 +338,8 @@ module ExtinctionMultipatch
         initial_population = initialize_population(population_size, fecundity, idx2partition)
         custom_differentiation = create_custom_differentiation(fecundity, partition_mutation_rate, idx2partition)
 
-        lower_constraint = fill(0.0, fecundity)
-        upper_constraint = fill(1.0, fecundity)
+        lower_constraint = fill(delta/2, fecundity)
+        upper_constraint = fill(1-delta/2, fecundity)
 
         lower_constraint = [lower_constraint; float(minimum(keys(idx2partition)))]
         upper_constraint = [upper_constraint; float(maximum(keys(idx2partition)))]
@@ -275,11 +350,32 @@ module ExtinctionMultipatch
 
         results = optimize(objective_function, constraints, de_algorithm, initial_population)
 
-        # output
+        # exctract results
         centers = results.minimizer[1:fecundity]
         partition = idx2partition[results.minimizer[end]]
         extinction_probability = results.minimum
 
+        # educated guess true optimum
+        if use_educated_guess
+            replaced_by = fill(nothing, fecundity)
+            current_pars = copy(results.minimizer)
+            for (i, el) in enumerate(current_pars[1:fecundity])
+                new_pars = copy(current_pars)
+                new_pars[i], candidate_type = educated_guess(el, delta, alpha1, beta1, alpha2, beta2, p1)
+                new_extinction_probability = objective_function(new_pars)
+                if new_extinction_probability < extinction_probability
+                    current_pars = new_pars
+                    extinction_probability = new_extinction_probability
+                    replaced_by[i] = candidate_type
+                end
+            end
+            centers = current_pars[1:fecundity]
+        end
+
+        # gets mean fitness maximizer 
+        mean_maximizer = maximize_survival_prob(delta, alpha1, beta1, alpha2, beta2, p1)
+
+        # output
         output = Dict("fecundity" => fecundity,
                     "delta" => delta,
                     "alpha1" => alpha1,
@@ -289,8 +385,13 @@ module ExtinctionMultipatch
                     "p1" => p1,
                     "centers" => centers,
                     "partition" => partition,
-                    "extinction_probability" => extinction_probability
+                    "extinction_probability" => extinction_probability,
+                    "mean_maximizer" => mean_maximizer
                     )
+
+        if use_educated_guess
+            output["replaced_by"] = replaced_by
+        end
         
         # saving
         # Convert the dictionary to JSON format
@@ -306,5 +407,4 @@ module ExtinctionMultipatch
 
         return output
     end
-    
 end
