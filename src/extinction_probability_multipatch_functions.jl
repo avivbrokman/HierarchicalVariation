@@ -16,8 +16,7 @@ module ExtinctionMultipatch
     using OptimizationOptimJL
     using ForwardDiff
 
-
-    export initialize_population, get_idx2partition, make_objective_function, create_custom_differentiation, BoxConstraints, DE, optimize, json, survival_prob, maximize_survival_prob, educated_guess, minimize_extinction_probability, get_extinction_prob, survival_interval, get_survival_intervals, segment_unit_interval_by_survival_overlap, get_segment_survival_counts, get_segment_probability, get_segment_probabilities, get_probabilities_in_patch_given_H, get_probabilities, probabilities2extinction_coefficients!, get_extinction_prob_from_coefficients, get_probabilities_given_H
+    export survival_interval, get_survival_intervals, segment_unit_interval_by_survival_overlap, get_segment_survival_counts, get_segment_probability, get_segment_probabilities, get_probabilities_in_patch_given_H, get_probabilities_given_H, get_probabilities, probabilities2extinction_coefficients!, get_extinction_prob_from_coefficients, get_extinction_prob, make_objective_function, get_idx2partition, initialize_population, survival_prob, maximize_survival_prob, near_mode_for_beta_mixture, maximize_survival_prob, maximize_survival_prob, diverse_push!, educated_guess, minimize_extinction_probability
 
     ## segmenting (0,1) by how many offspring survive in the patch for a given environmental value
     function survival_interval(center, delta)
@@ -42,7 +41,6 @@ module ExtinctionMultipatch
 
         return segments
     end
-
 
     function get_segment_survival_counts(survival_intervals)
 
@@ -131,7 +129,6 @@ module ExtinctionMultipatch
         return extinction_prob
     end
 
-
     ## workhorse function
     function get_extinction_prob(centers, partition, delta, alpha1, beta1, alpha2, beta2, p1, fecundity)
         # get Distributions
@@ -185,7 +182,6 @@ module ExtinctionMultipatch
         idx2partition = Dict(float(i) => el for (i, el) in enumerate(all_partitions))
         return idx2partition
     end
-
 
     ## Customizing optimization algorithm to handle a mix of continuous and binary parameters
     function initialize_population(population_size, fecundity, idx2partition)
@@ -373,7 +369,7 @@ module ExtinctionMultipatch
         end
 
         # gets mean fitness maximizer 
-        mean_maximizer = maximize_survival_prob(delta, alpha1, beta1, alpha2, beta2, p1)
+        # mean_maximizer = maximize_survival_prob(delta, alpha1, beta1, alpha2, beta2, p1)
 
         # output
         output = Dict("fecundity" => fecundity,
@@ -385,8 +381,8 @@ module ExtinctionMultipatch
                     "p1" => p1,
                     "centers" => centers,
                     "partition" => partition,
-                    "extinction_probability" => extinction_probability,
-                    "mean_maximizer" => mean_maximizer
+                    "extinction_probability" => extinction_probability#,
+                    # "mean_maximizer" => mean_maximizer
                     )
 
         if use_educated_guess

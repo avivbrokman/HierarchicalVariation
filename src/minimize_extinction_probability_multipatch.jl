@@ -137,7 +137,7 @@ function main_simple()
         "--use_educated_guess"
             arg_type = Bool
             required = false
-            default = true
+            default = false
     end
 
     args = parse_args(s)
