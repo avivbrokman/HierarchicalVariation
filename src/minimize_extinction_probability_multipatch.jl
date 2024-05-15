@@ -28,21 +28,23 @@ function setup_minimize_parser()
         "--p1"
             arg_type = Float64
             required = true
-        "--save_dir"
+        "--save-dir"
             arg_type = String
             required = true
-        "--population_size"
+        "--population-size"
             arg_type = Int64
             required = false
             default = 100
-        "--partition_mutation_rate"
+        "--partition-mutation-rate"
             arg_type = Float64
             required = false
             default = 0.2
-        "--use_educated_guess"
-            arg_type = Bool
-            required = false
-            default = false
+        "--use-educated-guess"
+            # arg_type = Bool
+            action = :store_true
+            # required = false
+            # default = false
+
     end
     return settings
 end
@@ -71,17 +73,20 @@ function setup_brute_force_minimize_parser()
         "--p1"
             arg_type = Float64
             required = true
-        "--save_dir"
+        "--save-dir"
             arg_type = String
             required = true
-        "--population_size"
+        "--population-size"
             arg_type = Int64
             required = false
             default = 100
-        "--use_educated_guess"
-            arg_type = Bool
-            required = false
-            default = false
+        "--use-educated-guess"
+            # arg_type = Bool
+            action = :store_true
+            # required = false
+            # default = false
+            
+
     end
     return settings
 end
@@ -92,7 +97,7 @@ function setup_parser()
     @add_arg_table! settings begin
         "minimize"
             action = :command
-        "brute_force_minimize"
+        "brute-force-minimize"
             action = :command
     end
 
@@ -109,102 +114,6 @@ function parse()
     return args
 end
 
-# function main_old()
-
-#     settings = ArgParseSettings()  # Create a settings object
-#     subcommands = ArgParse.add_subcommands(s)
-
-#     # function 1
-#     minimize_cmd = ArgParse.add_subcommand(subcommands, "minimize", help="Minimize extinction probability")
-
-#     @add_arg_table minimize_cmd begin
-#         "--fecundity"
-#             arg_type = Int64
-#             required = true
-#         "--delta"
-#             arg_type = Float64
-#             required = true
-#         "--alpha1"
-#             arg_type = Float64
-#             required = true
-#         "--beta1"
-#             arg_type = Float64
-#             required = true
-#         "--alpha2"
-#             arg_type = Float64
-#             required = true
-#         "--beta2"
-#             arg_type = Float64
-#             required = true
-#         "--p1"
-#             arg_type = Float64
-#             required = true
-#         "--save_dir"
-#             arg_type = String
-#             required = true
-#         "--population_size"
-#             arg_type = Int64
-#             required = false
-#             default = 100
-#         "--partition_mutation_rate"
-#             arg_type = Float64
-#             required = false
-#             default = 0.2
-#         "--use_educated_guess"
-#             arg_type = Bool
-#             required = false
-#             default = false
-#     end
-
-#     # function 2
-#     brute_force_minimize_cmd = ArgParse.add_subcommand(subcommands, "brute-force-minimize", help="Minimize extinction probability for each partition, and pick minimum")
-
-#     @add_arg_table brute_force_minimize_cmd begin
-#         "--fecundity"
-#             arg_type = Int64
-#             required = true
-#         "--delta"
-#             arg_type = Float64
-#             required = true
-#         "--alpha1"
-#             arg_type = Float64
-#             required = true
-#         "--beta1"
-#             arg_type = Float64
-#             required = true
-#         "--alpha2"
-#             arg_type = Float64
-#             required = true
-#         "--beta2"
-#             arg_type = Float64
-#             required = true
-#         "--p1"
-#             arg_type = Float64
-#             required = true
-#         "--save_dir"
-#             arg_type = String
-#             required = true
-#         "--population_size"
-#             arg_type = Int64
-#             required = false
-#             default = 100
-#         "--use_educated_guess"
-#             arg_type = Bool
-#             required = false
-#             default = false
-#     end
-
-#     args, selected_cmd = ArgParse.parse_args(settings)
-
-#     if selected_cmd == "minimize"
-
-#         return minimize_extinction_probability(args["fecundity"], args["delta"], args["alpha1"], args["beta1"],args["alpha2"], args["beta2"], args["p1"], args["save_dir"], args["population_size"], args["partition_mutation_rate"], args["use_educated_guess"])
-
-#     elseif selected_cmd == "brute_force_minimize"
-#         return minimize_extinction_probability(args["fecundity"], args["delta"], args["alpha1"], args["beta1"], args["alpha2"], args["beta2"], args["p1"], args["save_dir"], args["population_size"], args["use_educated_guess"])
-#     end
-# end
-
 function main()
 
     all_args = parse()
@@ -213,11 +122,11 @@ function main()
 
     if command == "minimize"
         args = all_args["minimize"]
-        return minimize_extinction_probability(args["fecundity"], args["delta"], args["alpha1"], args["beta1"],args["alpha2"], args["beta2"], args["p1"], args["save_dir"], args["population_size"], args["partition_mutation_rate"], args["use_educated_guess"])
+        return minimize_extinction_probability(args["fecundity"], args["delta"], args["alpha1"], args["beta1"],args["alpha2"], args["beta2"], args["p1"], args["save-dir"], args["population-size"], args["partition-mutation-rate"], args["use-educated-guess"])
 
     elseif command == "brute-force-minimize"
         args = all_args["brute-force-minimize"]
-        return minimize_extinction_probability(args["fecundity"], args["delta"], args["alpha1"], args["beta1"], args["alpha2"], args["beta2"], args["p1"], args["save_dir"], args["population_size"], args["use_educated_guess"])
+        return minimize_extinction_probability(args["fecundity"], args["delta"], args["alpha1"], args["beta1"], args["alpha2"], args["beta2"], args["p1"], args["save-dir"], args["population-size"], args["use-educated-guess"])
     end
 end
 
