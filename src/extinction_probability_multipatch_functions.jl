@@ -3,9 +3,9 @@ module ExtinctionMultipatch
     using Intervals
     using Distributions
     using Polynomials
+    # using Evolutionary
     using CustomEvolutionary1
-    using CustomEvolutionary1: optimize
-    using LinearAlgebra 
+    using LinearAlgebra
     using IterTools
     using Parameters
     using Combinatorics
@@ -16,8 +16,8 @@ module ExtinctionMultipatch
     using OptimizationOptimJL
     using ForwardDiff
 
+    export survival_interval, get_survival_intervals, segment_unit_interval_by_survival_overlap, get_segment_survival_counts, get_segment_probability, get_segment_probabilities, get_probabilities_in_patch_given_H, get_probabilities_given_H, get_probabilities, probabilities2extinction_coefficients!, get_extinction_prob_from_coefficients, get_extinction_prob, make_objective_function, make_objective_function, get_idx2partition, initialize_population, survival_prob, maximize_survival_prob, near_mode_for_beta_mixture, diverse_push!, educated_guess, save_results, minimize_extinction_probability, make_objective_function, minimize_partition_extinction_probability
 
-    export initialize_population, get_idx2partition, make_objective_function, create_custom_differentiation, BoxConstraints, DE, optimize, json, survival_prob, maximize_survival_prob, educated_guess, minimize_extinction_probability, get_extinction_prob, survival_interval, get_survival_intervals, segment_unit_interval_by_survival_overlap, get_segment_survival_counts, get_segment_probability, get_segment_probabilities, get_probabilities_in_patch_given_H, get_probabilities, probabilities2extinction_coefficients!, get_extinction_prob_from_coefficients, get_probabilities_given_H
 
     ## segmenting (0,1) by how many offspring survive in the patch for a given environmental value
     function survival_interval(center, delta)
@@ -42,7 +42,6 @@ module ExtinctionMultipatch
 
         return segments
     end
-
 
     function get_segment_survival_counts(survival_intervals)
 
@@ -131,7 +130,6 @@ module ExtinctionMultipatch
         return extinction_prob
     end
 
-
     ## workhorse function
     function get_extinction_prob(centers, partition, delta, alpha1, beta1, alpha2, beta2, p1, fecundity)
         # get Distributions
@@ -168,7 +166,7 @@ module ExtinctionMultipatch
     end
 
     ## using a closure as a workaround because DE's objective function must take a single vector as input
-    function make_objective_function(fecundity, delta, alpha1, beta1, alpha2, beta2, p1, idx2partition)
+    function make_objective_function(fecundity::Int64, delta::Float64, alpha1::Float64, beta1::Float64, alpha2::Float64, beta2::Float64, p1::Float64, idx2partition::Dict)
         function objective_function(vars)
             centers = vars[1:fecundity]
             partition_idx = vars[end]
@@ -185,7 +183,6 @@ module ExtinctionMultipatch
         idx2partition = Dict(float(i) => el for (i, el) in enumerate(all_partitions))
         return idx2partition
     end
-
 
     ## Customizing optimization algorithm to handle a mix of continuous and binary parameters
     function initialize_population(population_size, fecundity, idx2partition)
@@ -329,7 +326,23 @@ module ExtinctionMultipatch
         return guess, guess_type
     end
 
-    function minimize_extinction_probability(fecundity, delta, alpha1, beta1, alpha2, beta2, p1, save_dir, population_size, partition_mutation_rate, use_educated_guess)
+    function save_results(output, save_dir)
+
+        # saving
+        # Convert the dictionary to JSON format
+        json_data = json(output)
+
+        # Save the JSON string to a file
+        save_dir = "output/" * save_dir
+        mkpath(save_dir)
+
+        open(save_dir * "/" * "output.json", "w") do file
+            write(file, json_data)
+        end
+
+    end
+
+    function minimize_extinction_probability(fecundity::Int64, delta::Float64, alpha1::Float64, beta1::Float64, alpha2::Float64, beta2::Float64, p1::Float64, save_dir::String, population_size::Int64, partition_mutation_rate::Float64, use_educated_guess::Bool)
 
         idx2partition = get_idx2partition(fecundity)
 
@@ -344,11 +357,11 @@ module ExtinctionMultipatch
         lower_constraint = [lower_constraint; float(minimum(keys(idx2partition)))]
         upper_constraint = [upper_constraint; float(maximum(keys(idx2partition)))]
 
-        constraints = BoxConstraints(lower_constraint, upper_constraint)
+        constraints = CustomEvolutionary1.BoxConstraints(lower_constraint, upper_constraint)
 
-        de_algorithm = DE(populationSize = population_size, differentiation = custom_differentiation)
+        de_algorithm = CustomEvolutionary1.DE(populationSize = population_size, differentiation = custom_differentiation)
 
-        results = optimize(objective_function, constraints, de_algorithm, initial_population)
+        results = CustomEvolutionary1.optimize(objective_function, constraints, de_algorithm, initial_population)
 
         # exctract results
         centers = results.minimizer[1:fecundity]
@@ -393,18 +406,107 @@ module ExtinctionMultipatch
             output["replaced_by"] = replaced_by
         end
         
-        # saving
-        # Convert the dictionary to JSON format
-        json_data = json(output)
+        save_results(output, save_dir)
 
-        # Save the JSON string to a file
-        save_dir = "output/" * save_dir
-        mkpath(save_dir)
+        return output
+    end
 
-        open(save_dir * "/" * "output.json", "w") do file
-            write(file, json_data)
+    # brute force functions
+    function make_objective_function(partition::Vector{Vector{Int64}}, fecundity::Int64, delta::Float64, alpha1::Float64, beta1::Float64, alpha2::Float64, beta2::Float64, p1::Float64)
+        function objective_function(vars)
+            centers = vars[1:fecundity]
+            extinction_prob = get_extinction_prob(centers, partition, delta, alpha1, beta1, alpha2, beta2, p1, fecundity)
+            return extinction_prob
         end
 
+        return objective_function
+    end
+
+
+    function minimize_partition_extinction_probability(partition::Vector{Vector{Int64}}, fecundity::Int64, delta::Float64, alpha1::Float64, beta1::Float64, alpha2::Float64, beta2::Float64, p1::Float64, population_size::Int64, use_educated_guess::Bool)
+
+        # idx2partition = get_idx2partition(fecundity)
+
+        objective_function = make_objective_function(partition, fecundity, delta, alpha1, beta1, alpha2, beta2, p1)
+
+        # initial_population = initialize_population(population_size, fecundity, idx2partition)
+        # custom_differentiation = create_custom_differentiation(fecundity, partition_mutation_rate, idx2partition)
+
+        lower_constraint = fill(delta/2, fecundity)
+        upper_constraint = fill(1-delta/2, fecundity)
+
+        # lower_constraint = [lower_constraint; float(minimum(keys(idx2partition)))]
+        # upper_constraint = [upper_constraint; float(maximum(keys(idx2partition)))]
+
+        constraints = Evolutionary.BoxConstraints(lower_constraint, upper_constraint)
+
+        de_algorithm = Evolutionary.DE(populationSize = population_size)
+
+        results = Evolutionary.optimize(objective_function, constraints, de_algorithm)
+
+        # exctract results
+        centers = results.minimizer[1:fecundity]
+        extinction_probability = results.minimum
+
+        # educated guess true optimum
+        if use_educated_guess
+            replaced_by = fill(nothing, fecundity)
+            current_pars = copy(results.minimizer)
+            for (i, el) in enumerate(current_pars[1:fecundity])
+                new_pars = copy(current_pars)
+                new_pars[i], candidate_type = educated_guess(el, delta, alpha1, beta1, alpha2, beta2, p1)
+                new_extinction_probability = objective_function(new_pars)
+                if new_extinction_probability < extinction_probability
+                    current_pars = new_pars
+                    extinction_probability = new_extinction_probability
+                    replaced_by[i] = candidate_type
+                end
+            end
+            centers = current_pars[1:fecundity]
+        end
+
+        # gets mean fitness maximizer 
+        mean_maximizer = maximize_survival_prob(delta, alpha1, beta1, alpha2, beta2, p1)
+
+        # output
+        output = Dict("fecundity" => fecundity,
+                    "delta" => delta,
+                    "alpha1" => alpha1,
+                    "beta1" => beta1,
+                    "alpha2" => alpha2,
+                    "beta2" => beta2,
+                    "p1" => p1,
+                    "centers" => centers,
+                    "partition" => partition,
+                    "extinction_probability" => extinction_probability,
+                    "mean_maximizer" => mean_maximizer
+                    )
+
+        if use_educated_guess
+            output["replaced_by"] = replaced_by
+        end
+        
+        return output
+    end
+
+    function minimize_extinction_probability(fecundity::Int64, delta::Float64, alpha1::Float64, beta1::Float64, alpha2::Float64, beta2::Float64, p1::Float64, save_dir::String, population_size::Int64, use_educated_guess::Bool)
+
+        extinction_probability = 10
+        output = nothing
+
+        all_partitions = collect(partitions(1:fecundity))
+        
+        for el in all_partitions
+            current_output = minimize_partition_extinction_probability(el, fecundity, delta, alpha1, beta1, alpha2, beta2, p1, population_size, use_educated_guess)
+            
+            if current_output["extinction_probability"] < extinction_probability
+                extinction_probability = current_output["extinction_probability"]
+                output = current_output
+            end
+        end
+
+        save_results(output, save_dir)
+        
         return output
     end
 end
