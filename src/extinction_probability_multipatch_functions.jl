@@ -351,56 +351,21 @@ module ExtinctionMultipatch
         return guess, guess_type
     end
 
-    # function try_educated_guess(minimizer, extinction_probability, fecundity, delta, alpha1, beta1, alpha2, beta2, p1, objective_function)
-    #     candidates, descriptions = get_educated_guess_candidates(delta, alpha1, beta1, alpha2, beta2, p1)
-    #     replaced_by = fill("N/A", fecundity)
-    #         current_pars = copy(minimizer)
-    #         for (i, el) in enumerate(current_pars[1:fecundity])
-    #             new_pars = copy(current_pars)
-    #             new_pars[i], candidate_type = educated_guess(el, candidates, descriptions)
-    #             new_extinction_probability = objective_function(new_pars)
-    #             if new_extinction_probability < extinction_probability
-    #                 current_pars = new_pars
-    #                 extinction_probability = new_extinction_probability
-    #                 replaced_by[i] = candidate_type
-    #             end
-    #         end
-    #         centers = current_pars[1:fecundity]
-    #     return centers, replaced_by, extinction_probability
-    # end
-
-    # function try_educated_guess(minimizer, extinction_probability, candidates, descriptions, objective_function, fecundity)
-    #     replaced_by = fill("N/A", fecundity)
-    #         current_pars = copy(minimizer)
-    #         for (i, el) in enumerate(current_pars[1:fecundity])
-    #             new_pars = copy(current_pars)
-    #             new_pars[i], candidate_type = educated_guess(el, candidates, descriptions)
-    #             new_extinction_probability = objective_function(new_pars)
-    #             if new_extinction_probability < extinction_probability
-    #                 current_pars = new_pars
-    #                 extinction_probability = new_extinction_probability
-    #                 replaced_by[i] = candidate_type
-    #             end
-    #         end
-    #         centers = current_pars[1:fecundity]
-    #     return centers, replaced_by, extinction_probability
-    # end
-
     function try_educated_guess(centers, partition, extinction_probability, candidates, descriptions, delta, alpha1, beta1, alpha2, beta2, p1)
         fecundity = length(centers)
         replaced_by = fill("N/A", fecundity)
-            current_centers = copy(centers)
-            for (i, el) in enumerate(centers)
-                new_centers = copy(centers)
-                new_centers[i], candidate_type = educated_guess(el, candidates, descriptions)
-                new_extinction_probability = get_extinction_prob(new_centers, partition, delta, alpha1, beta1, alpha2, beta2, p1, fecundity)
-                if new_extinction_probability < extinction_probability
-                    current_centers = new_centers
-                    extinction_probability = new_extinction_probability
-                    replaced_by[i] = candidate_type
-                end
+        current_centers = copy(centers)
+        for (i, el) in enumerate(centers)
+            new_centers = copy(centers)
+            new_centers[i], candidate_type = educated_guess(el, candidates, descriptions)
+            new_extinction_probability = get_extinction_prob(new_centers, partition, delta, alpha1, beta1, alpha2, beta2, p1, fecundity)
+            if new_extinction_probability < extinction_probability
+                current_centers = new_centers
+                extinction_probability = new_extinction_probability
+                replaced_by[i] = candidate_type
             end
-            centers = current_centers
+        end
+        centers = current_centers
         return centers, replaced_by, extinction_probability
     end
      
@@ -419,27 +384,6 @@ module ExtinctionMultipatch
             write(file, json_data)
         end
 
-    end
-
-    function get_constraints(delta, fecundity, idx2partition)
-        lower_constraint = fill(delta/2, fecundity)
-        upper_constraint = fill(1-delta/2, fecundity)
-
-        lower_constraint = [lower_constraint; float(minimum(keys(idx2partition)))]
-        upper_constraint = [upper_constraint; float(maximum(keys(idx2partition)))]
-
-        constraints = CustomEvolutionary1.BoxConstraints(lower_constraint, upper_constraint)
-
-        return constraints
-    end
-
-    function get_constraints(delta, fecundity)
-        lower_constraint = fill(delta/2, fecundity)
-        upper_constraint = fill(1-delta/2, fecundity)
-
-        constraints = CustomEvolutionary1.BoxConstraints(lower_constraint, upper_constraint)
-
-        return constraints
     end
 
     ##### running everything
