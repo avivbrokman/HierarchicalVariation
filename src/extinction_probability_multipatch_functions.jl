@@ -1,3 +1,7 @@
+# For mean-maximizer strategy, if arrived at through optimization, check whether any of the single distribution best strategies are better 
+# Figure out why the replacement thingy isn't working.
+# removed duplicates for "good" and "best" and "mean-maximizer"
+
 module ExtinctionMultipatch
 
     using Intervals
@@ -212,40 +216,45 @@ module ExtinctionMultipatch
         
         objective = center -> -survival_prob(center[1], delta, alpha, beta)
         
-        if alpha > 0 && beta > 0
+        if alpha > 1 && beta > 1
             if alpha == beta
                 best = 0.5
                 desc = "best"
             else
                 dist = Beta(alpha, beta)
                 guess = [mode(dist)]
-                guess = clamp.(guess, delta/2, 1-delta/2)
-                # constraints = [delta/2,1 - delta/2]
-                solution = optimize(objective, [delta/2], [1 - delta/2], guess, Fminbox(LBFGS()), Optim.Options(show_trace=false))
+                guess = clamp.(guess, delta, 1-delta)
+                solution = optimize(objective, [delta], [1 - delta], guess, Fminbox(LBFGS()), Optim.Options(show_trace=false))
                 best = solution.minimizer[1]
 
                 desc = "best"
             end
         elseif 1 > alpha > beta
-            best = 1 - delta/2, delta/2
+            best = 1 - delta, delta
             desc = "best", "good"
         elseif 1 > beta > alpha
-            best = delta/2, 1 -  delta/2
+            best = delta, 1 -  delta
             desc = "best", "good"
         elseif alpha > beta
-            best = 1 - delta/2
+            best = 1 - delta
             desc = "best"
         elseif beta < alpha
-            best = delta/2
+            best = delta
             desc = "best"
         elseif alpha == beta < 1
-            @warn "two best: delta/2 and 1 - delta/2"
-            best = delta/2, 1 - delta/2
+            @warn "two best: delta and 1 - delta"
+            best = delta, 1 - delta
             desc = "best", "best"
         elseif alpha == beta == 1
             @warn "std uniform dist"
             best = nothing
             desc = nothing
+        elseif 1 == alpha > beta
+            best = 1 - delta
+            desc = "best"
+        elseif 1 == beta > alpha
+            best = delta
+            desc = "best"
         end
     return best, desc
     end
@@ -269,15 +278,13 @@ module ExtinctionMultipatch
         else 
             # dist = MixtureModel(Beta, [(alpha1, beta1), (alpha2, beta2)], [p1, 1-p1])
             guess = [near_mode_for_beta_mixture(alpha1, beta1, alpha2, beta2, p1)]
-            guess = clamp.(guess, delta/2, 1-delta/2)
-            # optf = OptimizationFunction(objective,Optimization.FiniteDiff())
-            # problem = OptimizationProblem(optf, guess, lb = [delta/2], ub = [1 - delta/2])
-            # solution = solve(problem, LBFGS())
-            solution = optimize(objective, [delta/2], [1 - delta/2], guess, Fminbox(LBFGS()), Optim.Options(show_trace=false))
+            guess = clamp.(guess, delta, 1-delta)
+            solution = optimize(objective, [delta], [1 - delta], guess, Fminbox(LBFGS()), Optim.Options(show_trace=false))
 
             # best = solution.u
             best = solution.minimizer[1]
         end
+
     return best
     end     
 
@@ -319,22 +326,6 @@ module ExtinctionMultipatch
         return candidates, descriptions
     end
 
-    # function educated_guess(optimized, delta, alpha1, beta1, alpha2, beta2, p1)
-    #     candidates, descriptions = get_educated_guess_candidates(delta, alpha1, beta1, alpha2, beta2, p1)
-
-    #     distances = Float64[]
-    #     guess_types = String[]
-    #     for (el_cand, el_desc) in zip(candidates, descriptions)
-    #         push!(distances, abs(optimized - el_cand))
-    #         push!(guess_types, el_desc)
-    #     end
-    #     best_idx = argmin(distances)
-    #     guess = candidates[best_idx]
-    #     guess_type = guess_types[best_idx]
-
-    #     return guess, guess_type
-    # end
-
     function educated_guess(optimized, candidates, descriptions)
         # candidates, descriptions = get_educated_guess_candidates(delta, alpha1, beta1, alpha2, beta2, p1)
 
@@ -354,18 +345,18 @@ module ExtinctionMultipatch
     function try_educated_guess(centers, partition, extinction_probability, candidates, descriptions, delta, alpha1, beta1, alpha2, beta2, p1)
         fecundity = length(centers)
         replaced_by = fill("N/A", fecundity)
-        current_centers = copy(centers)
-        for (i, el) in enumerate(centers)
+        for i in 1:fecundity
             new_centers = copy(centers)
-            new_centers[i], candidate_type = educated_guess(el, candidates, descriptions)
-            new_extinction_probability = get_extinction_prob(new_centers, partition, delta, alpha1, beta1, alpha2, beta2, p1, fecundity)
-            if new_extinction_probability < extinction_probability
-                current_centers = new_centers
-                extinction_probability = new_extinction_probability
-                replaced_by[i] = candidate_type
+            for (el_cand, el_desc) in zip(candidates, descriptions)
+                new_centers[i] = el_cand
+                new_extinction_probability = get_extinction_prob(new_centers, partition, delta, alpha1, beta1, alpha2, beta2, p1, fecundity)
+                if new_extinction_probability <= extinction_probability
+                    centers = new_centers
+                    extinction_probability = new_extinction_probability
+                    replaced_by[i] = el_desc
+                end
             end
         end
-        centers = current_centers
         return centers, replaced_by, extinction_probability
     end
      
@@ -396,8 +387,8 @@ module ExtinctionMultipatch
         initial_population = initialize_population(population_size, fecundity, idx2partition)
         custom_differentiation = create_custom_differentiation(fecundity, partition_mutation_rate, idx2partition)
 
-        lower_constraint = fill(delta/2, fecundity)
-        upper_constraint = fill(1-delta/2, fecundity)
+        lower_constraint = fill(delta, fecundity)
+        upper_constraint = fill(1-delta, fecundity)
         lower_constraint = [lower_constraint; float(minimum(keys(idx2partition)))]
         upper_constraint = [upper_constraint; float(maximum(keys(idx2partition)))]
         constraints = CustomEvolutionary1.BoxConstraints(lower_constraint, upper_constraint)
@@ -461,14 +452,8 @@ module ExtinctionMultipatch
 
         objective_function = make_objective_function(partition, fecundity, delta, alpha1, beta1, alpha2, beta2, p1)
 
-        # initial_population = initialize_population(population_size, fecundity, idx2partition)
-        # custom_differentiation = create_custom_differentiation(fecundity, partition_mutation_rate, idx2partition)
-
-        lower_constraint = fill(delta/2, fecundity)
-        upper_constraint = fill(1-delta/2, fecundity)
-
-        # lower_constraint = [lower_constraint; float(minimum(keys(idx2partition)))]
-        # upper_constraint = [upper_constraint; float(maximum(keys(idx2partition)))]
+        lower_constraint = fill(delta, fecundity)
+        upper_constraint = fill(1-delta, fecundity)
 
         constraints = Evolutionary.BoxConstraints(lower_constraint, upper_constraint)
 
@@ -482,23 +467,12 @@ module ExtinctionMultipatch
 
         # educated guess true optimum
         if use_educated_guess
-            replaced_by = fill("N/A", fecundity)
-            current_pars = copy(results.minimizer)
-            for (i, el) in enumerate(current_pars[1:fecundity])
-                new_pars = copy(current_pars)
-                new_pars[i], candidate_type = educated_guess(el, delta, alpha1, beta1, alpha2, beta2, p1)
-                new_extinction_probability = objective_function(new_pars)
-                if new_extinction_probability < extinction_probability
-                    current_pars = new_pars
-                    extinction_probability = new_extinction_probability
-                    replaced_by[i] = candidate_type
-                end
-            end
-            centers = current_pars[1:fecundity]
+            candidates, descriptions = get_educated_guess_candidates(delta, alpha1, beta1, alpha2, beta2, p1)
+            centers, replaced_by, extinction_probability = try_educated_guess(centers, partition, extinction_probability, candidates, descriptions, delta, alpha1, beta1, alpha2, beta2, p1)
         end
 
         # gets mean fitness maximizer 
-        mean_maximizer = maximize_survival_prob(delta, alpha1, beta1, alpha2, beta2, p1)
+        # mean_maximizer = maximize_survival_prob(delta, alpha1, beta1, alpha2, beta2, p1)
 
         # output
         output = Dict("fecundity" => fecundity,
@@ -510,12 +484,12 @@ module ExtinctionMultipatch
                     "p1" => p1,
                     "centers" => centers,
                     "partition" => partition,
-                    "extinction_probability" => extinction_probability,
-                    "mean_maximizer" => mean_maximizer
+                    "extinction_probability" => extinction_probability
                     )
 
         if use_educated_guess
             output["replaced_by"] = replaced_by
+            output["special_centers"] = hcat(candidates, descriptions)
         end
         
         return output

@@ -1,0 +1,1 @@
+{"alpha2":0.5,"special_centers":[[0.1,0.9,0.1,0.9,0.8999999998281887,0.10000000017181132],["best","best","best","best","mean_max","mean_max_complement"]],"delta":0.1,"centers":[0.10000000017181132,0.9,0.1,0.9],"beta2":0.5,"fecundity":4,"beta1":0.5,"replaced_by":["best","N/A","N/A","N/A"],"alpha1":0.5,"extinction_probability":0.48157347584707705,"partition":[[1,2],[3,4]],"p1":1.0}

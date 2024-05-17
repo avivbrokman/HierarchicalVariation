@@ -91,6 +91,40 @@ function setup_brute_force_minimize_parser()
     return settings
 end
 
+# function setup_extinction_probability_parser()
+#     settings = ArgParseSettings()
+#     @add_arg_table settings begin
+#         "--centers"
+#             arg_type = Vector{Float64}
+#             required = true
+#         "--partition"
+#             arg_type = Vector{Vector{Int64}}
+#             required = true
+#         "--fecundity"
+#             arg_type = Int64
+#             required = true
+#         "--delta"
+#             arg_type = Float64
+#             required = true
+#         "--alpha1"
+#             arg_type = Float64
+#             required = true
+#         "--beta1"
+#             arg_type = Float64
+#             required = true
+#         "--alpha2"
+#             arg_type = Float64
+#             required = true
+#         "--beta2"
+#             arg_type = Float64
+#             required = true
+#         "--p1"
+#             arg_type = Float64
+#             required = true
+#     end
+#     return settings
+# end
+
 function setup_parser()
     settings = ArgParseSettings()
 
