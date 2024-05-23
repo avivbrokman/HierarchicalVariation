@@ -267,6 +267,19 @@ module ExtinctionMultipatch
         return sample[argmax(sample)]
     end
 
+    function try_educated_guess(center::Float64, survival_prob::Float64, candidates::Vector{Float64}, descriptions::Vector{String}, delta::Float64, alpha1::Float64, beta1::Float64, alpha2::Float64, beta2::Float64, p1::Float64)
+        desc = "nothing"
+        for (el_cand, el_desc) in zip(candidates, descriptions)
+            new_survival_prob = survival_prob(el_cand, delta, alpha1, beta1, alpha2, beta2, p1)
+            if new_survival_prob >= survival_prob
+                center = el_cand
+                survival_prob = new_survival_prob
+                desc = el_desc
+            end
+        end
+        return center, desc
+    end
+    
     function maximize_survival_prob(delta, alpha1, beta1, alpha2, beta2, p1)
         
         objective = center -> -survival_prob(center[1], delta, alpha1, beta1, alpha2, beta2, p1)
@@ -283,45 +296,114 @@ module ExtinctionMultipatch
 
             # best = solution.u
             best = solution.minimizer[1]
+            value = solution.minimum
         end
 
-    return best
+        # educated guessing
+        candidates, descriptions = get_educated_guess_candidates_from_single_distributions(delta, alpha1, beta1, alpha2, beta2)
+
+        best, desc = try_educated_guess(best, value, candidates, descriptions, delta, alpha1, beta1, alpha2, beta2, p1)
+ 
+    return best, desc
     end     
 
     ###### educated guessing
-    function diverse_push!(vector, value)
-        if value isa Float64 || value isa String
-            push!(vector, value)
+
+    # function diverse_push!(vector, value)
+    #     if value isa Float64 || value isa String
+    #         if value ∉ vector
+    #             push!(vector, value)
+    #         end
+    #     else
+    #         if value[1] ∉ vector
+    #             push!(vector, value[1])
+    #         end
+    #         if if value[2] ∉ vector
+    #             push!(vector, value[2])
+    #         end
+    #     end
+    # end
+
+
+    # function diverse_push!(vector::Vector, value::Float64)
+    #     if value ∉ vector
+    #         push!(vector, value)
+    #     end
+    # end
+
+    # function diverse_push!(vector::Vector, value::Vector)
+    #     diverse_push!(vector, value[1])
+    #     diverse_push!(vector, value[2])
+    # end
+
+    function get_desc2priority()
+        priority_order = ["best", "mean_max", "good", "mean_max_complement", "N/A"]
+        desc2priority = Dict(zip(priority_order, 1:length(priority_order)))
+
+        return desc2priority
+    end
+    #Vector{Union{Float64, Nothing}}()
+    function candidate_push!(candidate_vector::Vector{Union{Float64, Nothing}}, desc_vector::Vector{Union{String, Nothing}}, candidate::Float64, desc::String, desc2priority::Dict)
+        if candidate ∉ candidate_vector 
+            push!(candidate_vector, candidate)
+            push!(desc_vector, desc)
         else
-            push!(vector, value[1])
-            push!(vector, value[2])
+            index = findfirst(isequal(candidate), candidate_vector)
+            old_desc = desc_vector[index]
+            old_priority = desc2priority[old_desc]
+            new_priority = desc2priority[desc]
+            if new_priority < old_priority
+                push!(candidate_vector, candidate)
+                push!(desc_vector, desc)
+            end
         end
     end
-    
-    function get_educated_guess_candidates(delta, alpha1, beta1, alpha2, beta2, p1)
+
+    function candidate_push!(candidate_vector::Vector{Float64}, desc_vector::Vector{String}, candidate::Vector{Float64}, desc::Vector{String}, desc2priority::Dict)
+        for (el_cand, el_desc) in zip(candidate, desc)
+            candidate_push!(candidate_vector, desc_vector, el_cand, el_desc, desc2priority)
+        end
+    end
+
+    function get_educated_guess_candidates_from_single_distributions(delta, alpha1, beta1, alpha2, beta2)
+        
+        desc2priority = get_desc2priority()
+        
         candidates = Float64[]
         descriptions = String[]
         
         # maximize surv porb in single distributions
         candidates1, descriptions1 = maximize_survival_prob(delta, alpha1, beta1)
         candidates2, descriptions2 = maximize_survival_prob(delta, alpha2, beta2)
-        
-        diverse_push!(candidates, candidates1)
-        diverse_push!(descriptions, descriptions1)
-        diverse_push!(candidates, candidates2)
-        diverse_push!(descriptions, descriptions2)
+
+        candidate_push!(candidates, descriptions, candidates1, descriptions1, desc2priority)
+        candidate_push!(candidates, descriptions, candidates2, descriptions2, desc2priority)
+
+        return candidates, descriptions
+    end
+
+    function get_educated_guess_candidates(delta, alpha1, beta1, alpha2, beta2, p1)
+        desc2priority = get_desc2priority()
+
+        candidates, descriptions = get_educated_guess_candidates_from_single_distributions(delta, alpha1, beta1, alpha2, beta2)
 
         # maximize surv prob in mixture dist
-        candidate3 = maximize_survival_prob(delta, alpha1, beta1, alpha2, beta2, p1)
-        description3 = "mean_max"
-        push!(candidates, candidate3)
-        push!(descriptions, description3)
+        candidate3, description3 = maximize_survival_prob(delta, alpha1, beta1, alpha2, beta2, p1)
+        # if isnothing(description3)
+        #     description3 = "mean_max"
+        # end
+        # push!(candidates, candidate3)
+        # push!(descriptions, description3)
+        candidate_push!(candidates, descriptions, candidate3, description3, desc2priority)
+
         
         # might have eq surv prob to candidate3 in mixture dist or may be local max
         candidate4 = 1 - candidate3
         description4 = "mean_max_complement"
-        push!(candidates, candidate4)
-        push!(descriptions, description4)
+        # push!(candidates, candidate4)
+        # push!(descriptions, description4)
+        candidate_push!(candidates, descriptions, candidate4, description4, desc2priority)
+
 
         return candidates, descriptions
     end
@@ -342,18 +424,23 @@ module ExtinctionMultipatch
         return guess, guess_type
     end
 
-    function try_educated_guess(centers, partition, extinction_probability, candidates, descriptions, delta, alpha1, beta1, alpha2, beta2, p1)
+    function try_educated_guess(centers::Vector{Float64}, partition::Vector{Vector{Int64}}, extinction_probability::Float64, candidates::Vector{Float64}, descriptions::Vector{String}, delta::Float64, alpha1::Float64, beta1::Float64, alpha2::Float64, beta2::Float64, p1::Float64)
         fecundity = length(centers)
         replaced_by = fill("N/A", fecundity)
-        for i in 1:fecundity
-            new_centers = copy(centers)
-            for (el_cand, el_desc) in zip(candidates, descriptions)
-                new_centers[i] = el_cand
-                new_extinction_probability = get_extinction_prob(new_centers, partition, delta, alpha1, beta1, alpha2, beta2, p1, fecundity)
-                if new_extinction_probability <= extinction_probability
-                    centers = new_centers
-                    extinction_probability = new_extinction_probability
-                    replaced_by[i] = el_desc
+        is_altered = true
+        while is_altered
+            is_altered = False
+            for i in 1:fecundity
+                new_centers = copy(centers)
+                for (el_cand, el_desc) in zip(candidates, descriptions)
+                    new_centers[i] = el_cand
+                    new_extinction_probability = get_extinction_prob(new_centers, partition, delta, alpha1, beta1, alpha2, beta2, p1, fecundity)
+                    if new_extinction_probability <= extinction_probability
+                        centers = new_centers
+                        extinction_probability = new_extinction_probability
+                        replaced_by[i] = el_desc
+                        is_altered = True
+                    end
                 end
             end
         end
@@ -444,7 +531,6 @@ module ExtinctionMultipatch
 
         return objective_function
     end
-
 
     function minimize_partition_extinction_probability(partition::Vector{Vector{Int64}}, fecundity::Int64, delta::Float64, alpha1::Float64, beta1::Float64, alpha2::Float64, beta2::Float64, p1::Float64, population_size::Int64, use_educated_guess::Bool)
 
