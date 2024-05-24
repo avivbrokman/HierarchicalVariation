@@ -19,3 +19,17 @@ e2 < e1
 e3 < e2
 e4 < e3
 e5 < e3
+e6 < e3
+
+
+alpha1 = beta1 = alpha2 = beta2 = 0.5
+
+alpha1 = beta1 = alpha2 = beta2 = 1.0
+
+alpha1 = beta1 = alpha2 = beta2 = 2.0
+
+alpha1 = beta2 = 0.6
+alpha2 = beta1 = 0.4
+
+alpha1 = beta2 = 1
+alpha2 = beta1 = 0.4

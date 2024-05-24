@@ -20,7 +20,7 @@ module ExtinctionMultipatch
     using OptimizationOptimJL
     using ForwardDiff
 
-    export survival_interval, get_survival_intervals, segment_unit_interval_by_survival_overlap, get_segment_survival_counts, get_segment_probability, get_segment_probabilities, get_probabilities_in_patch_given_H, get_probabilities_given_H, get_probabilities, probabilities2extinction_coefficients!, get_extinction_prob_from_coefficients, get_extinction_prob, make_objective_function, make_objective_function, get_idx2partition, initialize_population, survival_prob, maximize_survival_prob, near_mode_for_beta_mixture, diverse_push!, educated_guess, save_results, minimize_extinction_probability, make_objective_function, minimize_partition_extinction_probability
+    export survival_interval, get_survival_intervals, segment_unit_interval_by_survival_overlap, get_segment_survival_counts, get_segment_probability, get_segment_probabilities, get_probabilities_in_patch_given_H, get_probabilities_given_H, get_probabilities, probabilities2extinction_coefficients!, get_extinction_prob_from_coefficients, get_extinction_prob, make_objective_function, make_objective_function, get_idx2partition, initialize_population, survival_prob, maximize_survival_prob, near_mode_for_beta_mixture, candidate_push!, educated_guess, save_results, minimize_extinction_probability, make_objective_function, minimize_partition_extinction_probability, get_desc2priority, get_educated_guess_candidates_from_single_distributions, try_educated_guess, get_educated_guess_candidates, is_close, close_replace
 
 
     ## segmenting (0,1) by how many offspring survive in the patch for a given environmental value
@@ -230,11 +230,11 @@ module ExtinctionMultipatch
                 desc = "best"
             end
         elseif 1 > alpha > beta
-            best = 1 - delta, delta
-            desc = "best", "good"
+            best = [1 - delta, delta]
+            desc = ["best", "good"]
         elseif 1 > beta > alpha
-            best = delta, 1 -  delta
-            desc = "best", "good"
+            best = [delta, 1 -  delta]
+            desc = ["best", "good"]
         elseif alpha > beta
             best = 1 - delta
             desc = "best"
@@ -243,8 +243,8 @@ module ExtinctionMultipatch
             desc = "best"
         elseif alpha == beta < 1
             @warn "two best: delta and 1 - delta"
-            best = delta, 1 - delta
-            desc = "best", "best"
+            best = [delta, 1 - delta]
+            desc = ["best", "best"]
         elseif alpha == beta == 1
             @warn "std uniform dist"
             best = nothing
@@ -258,6 +258,46 @@ module ExtinctionMultipatch
         end
     return best, desc
     end
+
+    function maximize_survival_prob(delta, alpha, beta)
+        
+        objective = center -> -survival_prob(center[1], delta, alpha, beta)
+        
+
+        if alpha == beta == 1
+            @warn "std uniform dist"
+            best = nothing
+            desc = nothing
+        elseif alpha == beta < 1
+            @warn "two best: delta and 1 - delta"
+            best = [delta, 1 - delta]
+            desc = ["best", "best"]
+        elseif alpha == beta > 1
+            alpha == beta
+            best = 0.5
+            desc = "best"
+        elseif alpha > 1 && beta > 1 && alpha != beta
+            dist = Beta(alpha, beta)
+            guess = [mode(dist)]
+            guess = clamp.(guess, delta, 1-delta)
+            solution = optimize(objective, [delta], [1 - delta], guess, Fminbox(LBFGS()), Optim.Options(show_trace=false))
+            best = solution.minimizer[1]
+            desc = "best"
+        elseif 1 <= alpha > beta <= 1
+            best = 1 - delta
+            desc = "best"
+        elseif 1 <= beta > alpha <= 1
+            best = delta
+            desc = "best"
+        elseif 1 > alpha > beta
+            best = [1 - delta, delta]
+            desc = ["best", "good"]
+        elseif 1 > beta > alpha
+            best = [delta, 1 -  delta]
+            desc = ["best", "good"]        
+        end
+    return best, desc
+    end
     
     function near_mode_for_beta_mixture(alpha1, beta1, alpha2, beta2, p1)
         dist = MixtureModel(Beta, [(alpha1, beta1), (alpha2, beta2)], [p1, 1-p1])
@@ -267,14 +307,34 @@ module ExtinctionMultipatch
         return sample[argmax(sample)]
     end
 
-    function try_educated_guess(center::Float64, survival_prob::Float64, candidates::Vector{Float64}, descriptions::Vector{String}, delta::Float64, alpha1::Float64, beta1::Float64, alpha2::Float64, beta2::Float64, p1::Float64)
+    function is_close(val1, val2, tol = 1e-8)
+        return abs(val1 - val2) < tol
+    end
+
+    function close_replace(candidate, desc, optimized, tol = 1e-8)
+        if is_close(val1, val2, tol)
+            return candidate, desc
+        else
+            return optimized, nothing
+        end
+    end
+
+
+    function try_educated_guess(center::Float64, center_survival_prob::Float64, candidates::Vector{Float64}, descriptions::Vector{String}, delta::Float64, alpha1::Float64, beta1::Float64, alpha2::Float64, beta2::Float64, p1::Float64)
         desc = "nothing"
         for (el_cand, el_desc) in zip(candidates, descriptions)
-            new_survival_prob = survival_prob(el_cand, delta, alpha1, beta1, alpha2, beta2, p1)
-            if new_survival_prob >= survival_prob
+            if is_close(el_cand, center)
+                new_survival_prob = survival_prob(el_cand, delta, alpha1, beta1, alpha2, beta2, p1)
                 center = el_cand
-                survival_prob = new_survival_prob
+                center_survival_prob = new_survival_prob
                 desc = el_desc
+            else
+                new_survival_prob = survival_prob(el_cand, delta, alpha1, beta1, alpha2, beta2, p1)
+                if new_survival_prob >= center_survival_prob
+                    center = el_cand
+                    center_survival_prob = new_survival_prob
+                    desc = el_desc
+                end
             end
         end
         return center, desc
@@ -284,10 +344,10 @@ module ExtinctionMultipatch
         
         objective = center -> -survival_prob(center[1], delta, alpha1, beta1, alpha2, beta2, p1)
 
-        if alpha1 == beta1 == alpha2 == beta2 == 1 || (alpha1 == beta1 == 1 && p1 == 1) || (alpha1 == beta2 == 2 && alpha2 == beta1 == 0.5) # uniform dist
+        if alpha1 == beta1 == alpha2 == beta2 == 1 || (alpha1 == beta1 == 1 && p1 == 1) || (alpha1 == beta2 == 2 && alpha2 == beta1 == 1) # uniform dist
             # all centers equal
             @warn "Std Uniform distribution"
-            best = nothing
+            return nothing, nothing
         else 
             # dist = MixtureModel(Beta, [(alpha1, beta1), (alpha2, beta2)], [p1, 1-p1])
             guess = [near_mode_for_beta_mixture(alpha1, beta1, alpha2, beta2, p1)]
@@ -296,16 +356,16 @@ module ExtinctionMultipatch
 
             # best = solution.u
             best = solution.minimizer[1]
-            value = solution.minimum
+            value = -solution.minimum
+
+            # educated guessing
+            candidates, descriptions = get_educated_guess_candidates_from_single_distributions(delta, alpha1, beta1, alpha2, beta2)
+
+            best, desc = try_educated_guess(best, value, candidates, descriptions, delta, alpha1, beta1, alpha2, beta2, p1)
+
+            return best, desc
         end
-
-        # educated guessing
-        candidates, descriptions = get_educated_guess_candidates_from_single_distributions(delta, alpha1, beta1, alpha2, beta2)
-
-        best, desc = try_educated_guess(best, value, candidates, descriptions, delta, alpha1, beta1, alpha2, beta2, p1)
- 
-    return best, desc
-    end     
+     end     
 
     ###### educated guessing
 
@@ -343,24 +403,29 @@ module ExtinctionMultipatch
         return desc2priority
     end
     #Vector{Union{Float64, Nothing}}()
-    function candidate_push!(candidate_vector::Vector{Union{Float64, Nothing}}, desc_vector::Vector{Union{String, Nothing}}, candidate::Float64, desc::String, desc2priority::Dict)
-        if candidate ∉ candidate_vector 
+    function candidate_push!(candidate_vector::Vector, desc_vector::Vector, candidate::Union{Float64, Nothing}, desc::Union{String, Nothing}, desc2priority::Dict)
+        if isnothing(candidate)
+            nothing 
+        elseif candidate ∉ candidate_vector 
             push!(candidate_vector, candidate)
             push!(desc_vector, desc)
         else
-            index = findfirst(isequal(candidate), candidate_vector)
+            # index = findfirst(isequal(candidate), candidate_vector)
+            index = findfirst(x -> is_close(x, candidate), candidate_vector)
             old_desc = desc_vector[index]
             old_priority = desc2priority[old_desc]
             new_priority = desc2priority[desc]
             if new_priority < old_priority
+                deleteat!(candidate_vector, index)
+                deleteat!(desc_vector, index)
                 push!(candidate_vector, candidate)
                 push!(desc_vector, desc)
             end
         end
     end
 
-    function candidate_push!(candidate_vector::Vector{Float64}, desc_vector::Vector{String}, candidate::Vector{Float64}, desc::Vector{String}, desc2priority::Dict)
-        for (el_cand, el_desc) in zip(candidate, desc)
+    function candidate_push!(candidate_vector::Vector{Float64}, desc_vector::Vector{String}, candidates::Vector, descs::Vector, desc2priority::Dict)
+        for (el_cand, el_desc) in zip(candidates, descs)
             candidate_push!(candidate_vector, desc_vector, el_cand, el_desc, desc2priority)
         end
     end
@@ -369,6 +434,9 @@ module ExtinctionMultipatch
         
         desc2priority = get_desc2priority()
         
+        # candidates = Vector{Union{Float64, Nothing}}()
+        # descriptions = Vector{Union{String, Nothing}}()
+
         candidates = Float64[]
         descriptions = String[]
         
@@ -429,7 +497,7 @@ module ExtinctionMultipatch
         replaced_by = fill("N/A", fecundity)
         is_altered = true
         while is_altered
-            is_altered = False
+            is_altered = false
             for i in 1:fecundity
                 new_centers = copy(centers)
                 for (el_cand, el_desc) in zip(candidates, descriptions)
