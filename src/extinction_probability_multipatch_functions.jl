@@ -19,6 +19,7 @@ module ExtinctionMultipatch
     using Optimization, Optim
     using OptimizationOptimJL
     using ForwardDiff
+    using StatsBase
 
     export survival_interval, get_survival_intervals, segment_unit_interval_by_survival_overlap, get_segment_survival_counts, get_segment_probability, get_segment_probabilities, get_probabilities_in_patch_given_H, get_probabilities_given_H, get_probabilities, probabilities2extinction_coefficients!, get_extinction_prob_from_coefficients, get_extinction_prob, make_objective_function, make_objective_function, get_idx2partition, initialize_population, survival_prob, maximize_survival_prob, near_mode_for_beta_mixture, candidate_push!, educated_guess, save_results, minimize_extinction_probability, make_objective_function, minimize_partition_extinction_probability, get_desc2priority, get_educated_guess_candidates_from_single_distributions, try_educated_guess, get_educated_guess_candidates, is_close, close_replace
 
@@ -501,13 +502,19 @@ module ExtinctionMultipatch
             for i in 1:fecundity
                 new_centers = copy(centers)
                 for (el_cand, el_desc) in zip(candidates, descriptions)
-                    new_centers[i] = el_cand
-                    new_extinction_probability = get_extinction_prob(new_centers, partition, delta, alpha1, beta1, alpha2, beta2, p1, fecundity)
-                    if new_extinction_probability <= extinction_probability
-                        centers = new_centers
-                        extinction_probability = new_extinction_probability
+                    if is_close(el_cand, centers[i])
+                        centers[i] = el_cand
                         replaced_by[i] = el_desc
                         is_altered = True
+                    else
+                        new_centers[i] = el_cand
+                        new_extinction_probability = get_extinction_prob(new_centers, partition, delta, alpha1, beta1, alpha2, beta2, p1, fecundity)
+                        if new_extinction_probability <= extinction_probability
+                            centers = new_centers
+                            extinction_probability = new_extinction_probability
+                            replaced_by[i] = el_desc
+                            is_altered = True
+                        end
                     end
                 end
             end
@@ -669,4 +676,77 @@ module ExtinctionMultipatch
         
         return output
     end
+
+    # def f_eps(s, epsilon, p):
+    #     conditional_gen_fun_coef = p[epsilon]
+    #     val = sum(el * s**i for i, el in enumerate(conditional_gen_fun_coef))
+    #     return val
+
+    # survival = s, environment = ϵ, generating_fun_coef_by_environment = p
+    function f_eps(survival, environment, generating_fun_coef_by_environment)
+        conditional_generating_fun_coef = generating_fun_coef_by_environment[environment]
+        val = sum(el * survival^i for (i, el) in enumerate(conditional_generating_fun_coef))
+        return val
+    end
+    
+    function generate_environment_sequence(p1, num_generations)
+        return StatsBase.sample([1,2], Weights([p1, 1 - p1]), num_generations, replace = true)
+    end
+
+    # function generate_environment_sequences(p1, num_generations, num_runs)
+    #     return [generate_environment_sequence(p1, num_generations) for el in 1:num_runs]
+    # end
+
+    # generating_fun_coef_by_environment = p, 
+    # function approximate_extinction_probability(generating_fun_coef_by_environment, q0, environments::Vector{int64})
+        
+    #     q_seq = [q0]
+    #     for el in environments
+    #         q_new = f_eps(q_seq[end], el, generating_fun_coef_by_environment)
+    #         q_seq.append(q_new)
+    #     end
+            
+    #     return q_seq
+    # end
+
+    function approximate_extinction_probability(generating_fun_coef_by_environment, q0, environments::Vector{int64})
+        
+        q = q0
+        for el in environments
+            q = f_eps(q, el, generating_fun_coef_by_environment)
+        end
+            
+        return q
+    end
+
+    function approximate_extinction_probability(generating_fun_coef_by_environment, q0, p1, num_generations)
+        generate_environment_sequence(p1, num_generations)
+        q = q0
+        for el in environments
+            q = f_eps(q, el, generating_fun_coef_by_environment)
+        end
+            
+        return q
+    end
+
+    function approximate_extinction_probability(generating_fun_coef_by_environment, q0, p1, num_generations, num_runs)
+        
+        extinction_prob_runs = [approximate_extinction_probability(generating_fun_coef_by_environment, q0, p1, num_generations) for el in 1:num_runs]
+
+        extinction_prob = mean(extinction_prob_runs)
+
+        return extinction_prob
+    end
+
+    # function single_run_wrapper(p, q0, p0, num_iters = 500)
+    #     environments = generate_environments(p0, num_iters)
+    #     return single_run(p, q0, environments)
+    # end
+
+    # function multi_run(p, p0, num_iters = 500)
+    #     environments = generate_environments(p0, num_iters)
+    #     q0s = arange(0.01, 1, 0.01)
+    #     runs = [single_run(p, el, environments) for el in q0s]
+    #     # return np.array(runs)
+    # end
 end
