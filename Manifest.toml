@@ -2,7 +2,7 @@
 
 julia_version = "1.10.2"
 manifest_format = "2.0"
-project_hash = "f75d7137a554f21fb638b3cd2faac10c674d071f"
+project_hash = "353d61688a1df482e1ed55642f7498322e502df5"
 
 [[deps.Adapt]]
 deps = ["LinearAlgebra", "Requires"]
@@ -515,6 +515,10 @@ version = "1.4.3"
 [[deps.Printf]]
 deps = ["Unicode"]
 uuid = "de0858da-6303-5e67-8744-51eddeeeb8d7"
+
+[[deps.Profile]]
+deps = ["Printf"]
+uuid = "9abbd945-dff8-562f-b5e8-e1ebf5ef1b79"
 
 [[deps.QuadGK]]
 deps = ["DataStructures", "LinearAlgebra"]

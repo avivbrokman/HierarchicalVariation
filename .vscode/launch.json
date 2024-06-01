@@ -1,7 +1,4 @@
 {
-    // Use IntelliSense to learn about possible attributes.
-    // Hover to view descriptions of existing attributes.
-    // For more information, visit: https://go.microsoft.com/fwlink/?linkid=830387
     "version": "0.2.0",
     "configurations": [
 
@@ -11,20 +8,25 @@
             "name": "hierarchical_multiple_patches",
             "program": "${workspaceFolder}/src/minimize_extinction_probability_multipatch.jl",
             "args": [
-                "minimize",
+                "brute-force-minimize",
                 "--fecundity", "4",
                 "--delta", "0.1",
-                "--alpha1", "23",
-                "--beta1", "7",
-                "--alpha2", "7",
-                "--beta2", "23",
-                "--p1", "0.5",
-                "--save-dir", "test6",
-                "--use-educated-guess"
+                "--alpha1", "0.6",
+                "--beta1", "0.4",
+                "--alpha2", "0.4",
+                "--beta2", "0.6",
+                "--p1", "0.6",
+                "--save-dir", "test-new",
+                "--use-educated-guess",
+                "--q0", "0.5",
+                "--num-generations", "75",
+                "--num-runs", "100"
             ],
             "stopOnEntry": false,
             "cwd": "${workspaceFolder}",
-            "juliaEnv": "${command:activeJuliaEnvironment}" 
-        }
+            "juliaEnv": "~/Documents/Kentucky/Grad School/ms_project/branching1" 
+        },
+        
     ]
 }
+

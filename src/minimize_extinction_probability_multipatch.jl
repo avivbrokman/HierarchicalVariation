@@ -1,9 +1,11 @@
 # packages
 using ArgParse
 include("extinction_probability_multipatch_functions.jl")
-using .ExtinctionMultipatch#: initialize_population, get_idx2partition, make_objective_function, create_custom_differentiation
-    
-# println(names(ExtinctionMultipatch))
+using .ExtinctionMultipatch
+
+# using Pkg
+# Pkg.precompile()
+
 function setup_minimize_parser()
     settings = ArgParseSettings()
     @add_arg_table settings begin
@@ -40,11 +42,16 @@ function setup_minimize_parser()
             required = false
             default = 0.2
         "--use-educated-guess"
-            # arg_type = Bool
             action = :store_true
-            # required = false
-            # default = false
-
+        "--q0"
+            arg_type = Float64
+            required = false
+        "--num-generations"
+            arg_type = Int64
+            required = false
+        "--num-runs"
+            arg_type = Int64
+            required = false
     end
     return settings
 end
@@ -81,12 +88,16 @@ function setup_brute_force_minimize_parser()
             required = false
             default = 100
         "--use-educated-guess"
-            # arg_type = Bool
             action = :store_true
-            # required = false
-            # default = false
-            
-
+        "--q0"
+            arg_type = Float64
+            required = false
+        "--num-generations"
+            arg_type = Int64
+            required = false
+        "--num-runs"
+            arg_type = Int64
+            required = false
     end
     return settings
 end
@@ -153,23 +164,26 @@ function main()
     all_args = parse()
 
     command = all_args["%COMMAND%"]
-
+    args = all_args[command]
     if command == "minimize"
-        args = all_args["minimize"]
-        return minimize_extinction_probability(args["fecundity"], args["delta"], args["alpha1"], args["beta1"],args["alpha2"], args["beta2"], args["p1"], args["save-dir"], args["population-size"], args["partition-mutation-rate"], args["use-educated-guess"])
-
+        if "q0" ∈ keys(args)
+            return minimize_extinction_probability(args["fecundity"], args["delta"], args["alpha1"], args["beta1"],args["alpha2"], args["beta2"], args["p1"], args["save-dir"], args["population-size"], args["partition-mutation-rate"], args["use-educated-guess"], args["q0"], args["num-generations"], args["num-runs"])
+        else
+            return minimize_extinction_probability(args["fecundity"], args["delta"], args["alpha1"], args["beta1"],args["alpha2"], args["beta2"], args["p1"], args["save-dir"], args["population-size"], args["partition-mutation-rate"], args["use-educated-guess"])
+        end
     elseif command == "brute-force-minimize"
-        args = all_args["brute-force-minimize"]
-        return minimize_extinction_probability(args["fecundity"], args["delta"], args["alpha1"], args["beta1"], args["alpha2"], args["beta2"], args["p1"], args["save-dir"], args["population-size"], args["use-educated-guess"])
+        if "q0" ∈ keys(args)
+            return minimize_extinction_probability(args["fecundity"], args["delta"], args["alpha1"], args["beta1"], args["alpha2"], args["beta2"], args["p1"], args["save-dir"], args["population-size"], args["use-educated-guess"], args["q0"], args["num-generations"], args["num-runs"])
+        else
+            return minimize_extinction_probability(args["fecundity"], args["delta"], args["alpha1"], args["beta1"], args["alpha2"], args["beta2"], args["p1"], args["save-dir"], args["population-size"], args["use-educated-guess"])
+        end
     end
 end
 
-# This conditional ensures that the script runs main only if it is not being included as a module
-if abspath(PROGRAM_FILE) == @__FILE__
-    # main()
-    main()
-end
+#     main()
+# end
 
+main()
 
 
 

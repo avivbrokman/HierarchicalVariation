@@ -33,3 +33,20 @@ alpha2 = beta1 = 0.4
 
 alpha1 = beta2 = 1
 alpha2 = beta1 = 0.4
+
+julia --project=. src/minimize_extinction_probability_multipatch.jl brute-force-minimize --fecundity 4 --delta 0.1 --alpha1 1.0 --beta1 0.05 --alpha2 0.05 --beta2 1.0 --p1 0.6 --save-dir fecundity4/delta0.1/extreme_mode__varying_mass_everywhere_else/beta1_0.05__p1_0.6 --use-educated-guess --population-size 100
+
+julia --project=. src/minimize_extinction_probability_multipatch.jl brute-force-minimize --fecundity 4 --delta 0.1 --alpha1 1.0 --beta1 0.05 --alpha2 0.05 --beta2 1.0 --p1 0.6 --save-dir fecundity4/delta0.1/extreme_mode__varying_mass_everywhere_else/beta1_0.05__p1_0.6 --use-educated-guess
+
+julia --compile=all --project=. src/minimize_extinction_probability_multipatch.jl brute-force-minimize --fecundity 4 --delta 0.1 --alpha1 1.0 --beta1 0.05 --alpha2 0.05 --beta2 1.0 --p1 0.6 --save-dir test8 --use-educated-guess --q0 0.5 --num-generations 75 --num-runs 100
+
+julia --compiled-modules=yes --project=. src/minimize_extinction_probability_multipatch.jl brute-force-minimize --fecundity 4 --delta 0.1 --alpha1 1.0 --beta1 0.05 --alpha2 0.05 --beta2 1.0 --p1 0.6 --save-dir test8 --use-educated-guess --q0 0.5 --num-generations 75 --num-runs 100
+
+julia --project=. src/minimize_extinction_probability_multipatch.jl brute-force-minimize --fecundity 4 --delta 0.1 --alpha1 1.0 --beta1 0.05 --alpha2 0.05 --beta2 1.0 --p1 0.6 --save-dir test8 --use-educated-guess --q0 0.5 --num-generations 75 --num-runs 100
+
+inner(a,b) = a + b
+inner(a,b,c,d) = a * b * c * d
+
+function outer(a,b,args...)
+    inner(a,b,args...)
+end

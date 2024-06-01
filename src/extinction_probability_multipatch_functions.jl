@@ -1,6 +1,3 @@
-# For mean-maximizer strategy, if arrived at through optimization, check whether any of the single distribution best strategies are better 
-# Figure out why the replacement thingy isn't working.
-# removed duplicates for "good" and "best" and "mean-maximizer"
 
 module ExtinctionMultipatch
 
@@ -20,10 +17,21 @@ module ExtinctionMultipatch
     using OptimizationOptimJL
     using ForwardDiff
     using StatsBase
+    using Profile
 
-    export survival_interval, get_survival_intervals, segment_unit_interval_by_survival_overlap, get_segment_survival_counts, get_segment_probability, get_segment_probabilities, get_probabilities_in_patch_given_H, get_probabilities_given_H, get_probabilities, probabilities2extinction_coefficients!, get_extinction_prob_from_coefficients, get_extinction_prob, make_objective_function, make_objective_function, get_idx2partition, initialize_population, survival_prob, maximize_survival_prob, near_mode_for_beta_mixture, candidate_push!, educated_guess, save_results, minimize_extinction_probability, make_objective_function, minimize_partition_extinction_probability, get_desc2priority, get_educated_guess_candidates_from_single_distributions, try_educated_guess, get_educated_guess_candidates, is_close, close_replace
+    export survival_interval, get_survival_intervals, segment_unit_interval_by_survival_overlap, get_segment_survival_counts, get_segment_probability, get_segment_probabilities, get_probabilities_in_patch_given_H, get_probabilities_given_H, get_probabilities, probabilities2extinction_coefficients!, get_extinction_prob_from_coefficients, get_extinction_prob
+    
+    export f_eps, generate_environment_sequence, approximate_extinction_probability
 
+    export make_objective_function, get_idx2partition, initialize_population
+    
+    export survival_prob, maximize_survival_prob, near_mode_for_beta_mixture, candidate_push!, educated_guess, get_desc2priority, get_educated_guess_candidates_from_single_distributions, try_educated_guess, get_educated_guess_candidates, is_close, close_replace
+    
+    export save_results, minimize_extinction_probability, minimize_partition_extinction_probability
 
+    # export Beta, Interval, cdf, Polynomial, roots
+
+    ############### Basic calculations
     ## segmenting (0,1) by how many offspring survive in the patch for a given environmental value
     function survival_interval(center, delta)
         left = max(center - delta, 0)
@@ -112,7 +120,7 @@ module ExtinctionMultipatch
         probabilities[2] -= 1
     end 
 
-    function get_extinction_prob_from_coefficients(coefficients)
+    function get_extinction_prob(coefficients::Vector{Float64})
         # make polynomial
         # coefficients_vector = [coefficients[i] for i in 0:maximum(keys(coefficients))]
 
@@ -135,8 +143,53 @@ module ExtinctionMultipatch
         return extinction_prob
     end
 
+    # survival = s, environment = ϵ, generating_fun_coef_by_environment = p
+    function f_eps(survival, environment, generating_fun_coef_by_environment)
+        # print("f_eps")
+        conditional_generating_fun_coef = generating_fun_coef_by_environment[environment]
+        val = sum(el * survival^i for (i, el) in enumerate(conditional_generating_fun_coef))
+        return val
+    end
+    
+    function generate_environment_sequence(p1, num_generations)
+        # print("generate environment sequence")
+        return StatsBase.sample([1,2], Weights([p1, 1 - p1]), num_generations, replace = true)
+    end
+
+    function approximate_extinction_probability(probabilities_by_environment, q0, environments::Vector{Int64})
+        # print("approximate_extinction_probability 11111")
+
+        q = q0
+        for el in environments
+            q = f_eps(q, el, probabilities_by_environment)
+        end
+            
+        return q
+    end
+
+    function approximate_extinction_probability(probabilities_by_environment, q0, p1, num_generations)
+        # print("approximate_extinction_probability 22222")
+        environments = generate_environment_sequence(p1, num_generations)
+        q = q0
+        for el in environments
+            q = f_eps(q, el, probabilities_by_environment)
+        end
+            
+        return q
+    end
+
+    function approximate_extinction_probability(probabilities_by_environment, q0, p1, num_generations, num_runs)
+        # print("approximate 33333")
+
+        extinction_prob_runs = [approximate_extinction_probability(probabilities_by_environment, q0, p1, num_generations) for el in 1:num_runs]
+
+        extinction_prob = mean(extinction_prob_runs)
+
+        return extinction_prob
+    end
+
     ## workhorse function
-    function get_extinction_prob(centers, partition, delta, alpha1, beta1, alpha2, beta2, p1, fecundity)
+    function get_extinction_prob(centers, partition, delta, alpha1, beta1, alpha2, beta2, p1, fecundity) 
         # get Distributions
         dist1 = Beta(alpha1, beta1)
         dist2 = Beta(alpha2, beta2)
@@ -170,13 +223,46 @@ module ExtinctionMultipatch
         return extinction_prob
     end
 
+    function get_extinction_prob(centers, partition, delta, alpha1, beta1, alpha2, beta2, p1, fecundity, q0, num_generations, num_runs) 
+        # get Distributions
+        dist1 = Beta(alpha1, beta1)
+        dist2 = Beta(alpha2, beta2)
+        
+        # get intervals
+        intervals_ = get_survival_intervals(centers, delta)
+
+        patch_probabilities_given_H1_by_patch = Vector{Dict{Int64, Float64}}()
+        patch_probabilities_given_H2_by_patch = Vector{Dict{Int64, Float64}}()
+
+        for (i, members) in enumerate(partition)
+            patch_intervals = [intervals_[i] for i in members]
+            segments, segment_survival_counts = get_segment_survival_counts(patch_intervals)
+            
+            segment_probabilities_given_H1 = get_segment_probabilities(segments, dist1)
+            segment_probabilities_given_H2 = get_segment_probabilities(segments, dist2)
+
+            push!(patch_probabilities_given_H1_by_patch, get_probabilities_in_patch_given_H(segment_survival_counts, segment_probabilities_given_H1, fecundity))
+            push!(patch_probabilities_given_H2_by_patch, get_probabilities_in_patch_given_H(segment_survival_counts, segment_probabilities_given_H2, fecundity))
+        end
+
+        probabilities_given_H1 = get_probabilities_given_H(patch_probabilities_given_H1_by_patch, fecundity)
+        probabilities_given_H2 = get_probabilities_given_H(patch_probabilities_given_H2_by_patch, fecundity)
+
+        probabilities_by_environment = [probabilities_given_H1, probabilities_given_H2]
+
+        extinction_prob = approximate_extinction_probability(probabilities_by_environment, q0, p1, num_generations, num_runs)
+
+        return extinction_prob
+    end
+
+    ################### Necessary for running DE
     ## using a closure as a workaround because DE's objective function must take a single vector as input
-    function make_objective_function(fecundity::Int64, delta::Float64, alpha1::Float64, beta1::Float64, alpha2::Float64, beta2::Float64, p1::Float64, idx2partition::Dict)
+    function make_objective_function(fecundity::Int64, delta::Float64, alpha1::Float64, beta1::Float64, alpha2::Float64, beta2::Float64, p1::Float64, idx2partition::Dict, args...)
         function objective_function(vars)
             centers = vars[1:fecundity]
             partition_idx = vars[end]
             partition = idx2partition[partition_idx]
-            extinction_prob = get_extinction_prob(centers, partition, delta, alpha1, beta1, alpha2, beta2, p1, fecundity)
+            extinction_prob = get_extinction_prob(centers, partition, delta, alpha1, beta1, alpha2, beta2, p1, fecundity, args...)
             return extinction_prob
         end
 
@@ -187,6 +273,17 @@ module ExtinctionMultipatch
         all_partitions = collect(partitions(1:fecundity))
         idx2partition = Dict(float(i) => el for (i, el) in enumerate(all_partitions))
         return idx2partition
+    end
+
+    # brute force functions
+    function make_objective_function(partition::Vector{Vector{Int64}}, fecundity::Int64, delta::Float64, alpha1::Float64, beta1::Float64, alpha2::Float64, beta2::Float64, p1::Float64, args...)
+        function objective_function(vars)
+            centers = vars[1:fecundity]
+            extinction_prob = get_extinction_prob(centers, partition, delta, alpha1, beta1, alpha2, beta2, p1, fecundity, args...)
+            return extinction_prob
+        end
+
+        return objective_function
     end
 
     ## Customizing optimization algorithm to handle a mix of continuous and binary parameters
@@ -201,6 +298,8 @@ module ExtinctionMultipatch
 
         return initial_population
     end
+
+    #################### Educated guessing
 
     function survival_prob(center, delta, alpha, beta)
         dist = Beta(alpha, beta)
@@ -320,7 +419,6 @@ module ExtinctionMultipatch
         end
     end
 
-
     function try_educated_guess(center::Float64, center_survival_prob::Float64, candidates::Vector{Float64}, descriptions::Vector{String}, delta::Float64, alpha1::Float64, beta1::Float64, alpha2::Float64, beta2::Float64, p1::Float64)
         desc = "nothing"
         for (el_cand, el_desc) in zip(candidates, descriptions)
@@ -368,34 +466,6 @@ module ExtinctionMultipatch
         end
      end     
 
-    ###### educated guessing
-
-    # function diverse_push!(vector, value)
-    #     if value isa Float64 || value isa String
-    #         if value ∉ vector
-    #             push!(vector, value)
-    #         end
-    #     else
-    #         if value[1] ∉ vector
-    #             push!(vector, value[1])
-    #         end
-    #         if if value[2] ∉ vector
-    #             push!(vector, value[2])
-    #         end
-    #     end
-    # end
-
-
-    # function diverse_push!(vector::Vector, value::Float64)
-    #     if value ∉ vector
-    #         push!(vector, value)
-    #     end
-    # end
-
-    # function diverse_push!(vector::Vector, value::Vector)
-    #     diverse_push!(vector, value[1])
-    #     diverse_push!(vector, value[2])
-    # end
 
     function get_desc2priority()
         priority_order = ["best", "mean_max", "good", "mean_max_complement", "N/A"]
@@ -410,6 +480,40 @@ module ExtinctionMultipatch
         elseif candidate ∉ candidate_vector 
             push!(candidate_vector, candidate)
             push!(desc_vector, desc)
+        else
+            # index = findfirst(isequal(candidate), candidate_vector)
+            index = findfirst(x -> is_close(x, candidate), candidate_vector)
+            old_desc = desc_vector[index]
+            old_priority = desc2priority[old_desc]
+            new_priority = desc2priority[desc]
+            if new_priority < old_priority
+                deleteat!(candidate_vector, index)
+                deleteat!(desc_vector, index)
+                push!(candidate_vector, candidate)
+                push!(desc_vector, desc)
+            end
+        end
+    end
+
+    function candidate_push!(candidate_vector::Vector, desc_vector::Vector, candidate::Union{Float64, Nothing}, desc::Union{String, Nothing}, desc2priority::Dict)
+        if isnothing(candidate)
+            nothing 
+        elseif candidate ∉ candidate_vector 
+            index = findfirst(x -> is_close(x, candidate), candidate_vector)
+            if isnothing(index)
+                push!(candidate_vector, candidate)
+                push!(desc_vector, desc)
+            else
+                old_desc = desc_vector[index]
+                old_priority = desc2priority[old_desc]
+                new_priority = desc2priority[desc]
+                if new_priority < old_priority
+                    deleteat!(candidate_vector, index)
+                    deleteat!(desc_vector, index)
+                    push!(candidate_vector, candidate)
+                    push!(desc_vector, desc)
+                end
+            end
         else
             # index = findfirst(isequal(candidate), candidate_vector)
             index = findfirst(x -> is_close(x, candidate), candidate_vector)
@@ -493,7 +597,7 @@ module ExtinctionMultipatch
         return guess, guess_type
     end
 
-    function try_educated_guess(centers::Vector{Float64}, partition::Vector{Vector{Int64}}, extinction_probability::Float64, candidates::Vector{Float64}, descriptions::Vector{String}, delta::Float64, alpha1::Float64, beta1::Float64, alpha2::Float64, beta2::Float64, p1::Float64)
+    function try_educated_guess(centers::Vector{Float64}, partition::Vector{Vector{Int64}}, extinction_probability::Float64, candidates::Vector{Float64}, descriptions::Vector{String}, delta::Float64, alpha1::Float64, beta1::Float64, alpha2::Float64, beta2::Float64, p1::Float64, args...)
         fecundity = length(centers)
         replaced_by = fill("N/A", fecundity)
         is_altered = true
@@ -502,18 +606,20 @@ module ExtinctionMultipatch
             for i in 1:fecundity
                 new_centers = copy(centers)
                 for (el_cand, el_desc) in zip(candidates, descriptions)
-                    if is_close(el_cand, centers[i])
+                    if el_cand == centers[i]
+                        is_altered = false
+                    elseif is_close(el_cand, centers[i])
                         centers[i] = el_cand
                         replaced_by[i] = el_desc
-                        is_altered = True
+                        is_altered = true
                     else
                         new_centers[i] = el_cand
-                        new_extinction_probability = get_extinction_prob(new_centers, partition, delta, alpha1, beta1, alpha2, beta2, p1, fecundity)
+                        new_extinction_probability = get_extinction_prob(new_centers, partition, delta, alpha1, beta1, alpha2, beta2, p1, fecundity, args...)
                         if new_extinction_probability <= extinction_probability
                             centers = new_centers
                             extinction_probability = new_extinction_probability
                             replaced_by[i] = el_desc
-                            is_altered = True
+                            is_altered = true
                         end
                     end
                 end
@@ -522,7 +628,7 @@ module ExtinctionMultipatch
         return centers, replaced_by, extinction_probability
     end
      
-    ###### helper functions
+    #################### helper functions
     function save_results(output, save_dir)
 
         # saving
@@ -539,12 +645,14 @@ module ExtinctionMultipatch
 
     end
 
-    ##### running everything
-    function minimize_extinction_probability(fecundity::Int64, delta::Float64, alpha1::Float64, beta1::Float64, alpha2::Float64, beta2::Float64, p1::Float64, save_dir::String, population_size::Int64, partition_mutation_rate::Float64, use_educated_guess::Bool)
+    ############### running everything
+    function minimize_extinction_probability(fecundity::Int64, delta::Float64, alpha1::Float64, beta1::Float64, alpha2::Float64, beta2::Float64, p1::Float64, save_dir::String, population_size::Int64, partition_mutation_rate::Float64, use_educated_guess::Bool, args...)
         
+        Random.seed!(0)
+
         idx2partition = get_idx2partition(fecundity)
 
-        objective_function = make_objective_function(fecundity, delta, alpha1, beta1, alpha2, beta2, p1, idx2partition)
+        objective_function = make_objective_function(fecundity, delta, alpha1, beta1, alpha2, beta2, p1, idx2partition, args...)
 
         initial_population = initialize_population(population_size, fecundity, idx2partition)
         custom_differentiation = create_custom_differentiation(fecundity, partition_mutation_rate, idx2partition)
@@ -567,7 +675,7 @@ module ExtinctionMultipatch
         # educated guess true optimum
         if use_educated_guess
             candidates, descriptions = get_educated_guess_candidates(delta, alpha1, beta1, alpha2, beta2, p1)
-            centers, replaced_by, extinction_probability = try_educated_guess(centers, partition, extinction_probability, candidates, descriptions, delta, alpha1, beta1, alpha2, beta2, p1)
+            centers, replaced_by, extinction_probability = try_educated_guess(centers, partition, extinction_probability, candidates, descriptions, delta, alpha1, beta1, alpha2, beta2, p1, args...)
         end
 
         # gets mean fitness maximizer 
@@ -596,22 +704,11 @@ module ExtinctionMultipatch
         return output
     end
 
-    # brute force functions
-    function make_objective_function(partition::Vector{Vector{Int64}}, fecundity::Int64, delta::Float64, alpha1::Float64, beta1::Float64, alpha2::Float64, beta2::Float64, p1::Float64)
-        function objective_function(vars)
-            centers = vars[1:fecundity]
-            extinction_prob = get_extinction_prob(centers, partition, delta, alpha1, beta1, alpha2, beta2, p1, fecundity)
-            return extinction_prob
-        end
-
-        return objective_function
-    end
-
-    function minimize_partition_extinction_probability(partition::Vector{Vector{Int64}}, fecundity::Int64, delta::Float64, alpha1::Float64, beta1::Float64, alpha2::Float64, beta2::Float64, p1::Float64, population_size::Int64, use_educated_guess::Bool)
+    function minimize_partition_extinction_probability(partition::Vector{Vector{Int64}}, fecundity::Int64, delta::Float64, alpha1::Float64, beta1::Float64, alpha2::Float64, beta2::Float64, p1::Float64, population_size::Int64, use_educated_guess::Bool, args...)
 
         # idx2partition = get_idx2partition(fecundity)
 
-        objective_function = make_objective_function(partition, fecundity, delta, alpha1, beta1, alpha2, beta2, p1)
+        objective_function = make_objective_function(partition, fecundity, delta, alpha1, beta1, alpha2, beta2, p1, args...)
 
         lower_constraint = fill(delta, fecundity)
         upper_constraint = fill(1-delta, fecundity)
@@ -620,6 +717,7 @@ module ExtinctionMultipatch
 
         de_algorithm = Evolutionary.DE(populationSize = population_size)
 
+        # results = Evolutionary.optimize(objective_function, constraints, de_algorithm, Evolutionary.Options(iterations = 1))
         results = Evolutionary.optimize(objective_function, constraints, de_algorithm)
 
         # exctract results
@@ -628,8 +726,10 @@ module ExtinctionMultipatch
 
         # educated guess true optimum
         if use_educated_guess
+            print("start educated guess", "\n")
             candidates, descriptions = get_educated_guess_candidates(delta, alpha1, beta1, alpha2, beta2, p1)
-            centers, replaced_by, extinction_probability = try_educated_guess(centers, partition, extinction_probability, candidates, descriptions, delta, alpha1, beta1, alpha2, beta2, p1)
+            centers, replaced_by, extinction_probability = try_educated_guess(centers, partition, extinction_probability, candidates, descriptions, delta, alpha1, beta1, alpha2, beta2, p1, args...)
+            print("end educated guess", "\n")
         end
 
         # gets mean fitness maximizer 
@@ -651,12 +751,15 @@ module ExtinctionMultipatch
         if use_educated_guess
             output["replaced_by"] = replaced_by
             output["special_centers"] = hcat(candidates, descriptions)
+            print("finished educated guess function", "\n")
         end
         
         return output
     end
 
-    function minimize_extinction_probability(fecundity::Int64, delta::Float64, alpha1::Float64, beta1::Float64, alpha2::Float64, beta2::Float64, p1::Float64, save_dir::String, population_size::Int64, use_educated_guess::Bool)
+    function minimize_extinction_probability(fecundity::Int64, delta::Float64, alpha1::Float64, beta1::Float64, alpha2::Float64, beta2::Float64, p1::Float64, save_dir::String, population_size::Int64, use_educated_guess::Bool, args...)
+
+        Random.seed!(0)
 
         extinction_probability = 10
         output = nothing
@@ -664,89 +767,20 @@ module ExtinctionMultipatch
         all_partitions = collect(partitions(1:fecundity))
         
         for el in all_partitions
-            current_output = minimize_partition_extinction_probability(el, fecundity, delta, alpha1, beta1, alpha2, beta2, p1, population_size, use_educated_guess)
+            print("starting", "\n", el, "\n")
+            current_output = minimize_partition_extinction_probability(el, fecundity, delta, alpha1, beta1, alpha2, beta2, p1, population_size, use_educated_guess, args...)
             
             if current_output["extinction_probability"] < extinction_probability
                 extinction_probability = current_output["extinction_probability"]
                 output = current_output
             end
+            print("finished", "\n", el, "\n")
         end
 
+        print("saving", "\n")
         save_results(output, save_dir)
-        
+        print("saved", "\n")
         return output
     end
 
-    # def f_eps(s, epsilon, p):
-    #     conditional_gen_fun_coef = p[epsilon]
-    #     val = sum(el * s**i for i, el in enumerate(conditional_gen_fun_coef))
-    #     return val
-
-    # survival = s, environment = ϵ, generating_fun_coef_by_environment = p
-    function f_eps(survival, environment, generating_fun_coef_by_environment)
-        conditional_generating_fun_coef = generating_fun_coef_by_environment[environment]
-        val = sum(el * survival^i for (i, el) in enumerate(conditional_generating_fun_coef))
-        return val
-    end
-    
-    function generate_environment_sequence(p1, num_generations)
-        return StatsBase.sample([1,2], Weights([p1, 1 - p1]), num_generations, replace = true)
-    end
-
-    # function generate_environment_sequences(p1, num_generations, num_runs)
-    #     return [generate_environment_sequence(p1, num_generations) for el in 1:num_runs]
-    # end
-
-    # generating_fun_coef_by_environment = p, 
-    # function approximate_extinction_probability(generating_fun_coef_by_environment, q0, environments::Vector{int64})
-        
-    #     q_seq = [q0]
-    #     for el in environments
-    #         q_new = f_eps(q_seq[end], el, generating_fun_coef_by_environment)
-    #         q_seq.append(q_new)
-    #     end
-            
-    #     return q_seq
-    # end
-
-    function approximate_extinction_probability(generating_fun_coef_by_environment, q0, environments::Vector{int64})
-        
-        q = q0
-        for el in environments
-            q = f_eps(q, el, generating_fun_coef_by_environment)
-        end
-            
-        return q
-    end
-
-    function approximate_extinction_probability(generating_fun_coef_by_environment, q0, p1, num_generations)
-        generate_environment_sequence(p1, num_generations)
-        q = q0
-        for el in environments
-            q = f_eps(q, el, generating_fun_coef_by_environment)
-        end
-            
-        return q
-    end
-
-    function approximate_extinction_probability(generating_fun_coef_by_environment, q0, p1, num_generations, num_runs)
-        
-        extinction_prob_runs = [approximate_extinction_probability(generating_fun_coef_by_environment, q0, p1, num_generations) for el in 1:num_runs]
-
-        extinction_prob = mean(extinction_prob_runs)
-
-        return extinction_prob
-    end
-
-    # function single_run_wrapper(p, q0, p0, num_iters = 500)
-    #     environments = generate_environments(p0, num_iters)
-    #     return single_run(p, q0, environments)
-    # end
-
-    # function multi_run(p, p0, num_iters = 500)
-    #     environments = generate_environments(p0, num_iters)
-    #     q0s = arange(0.01, 1, 0.01)
-    #     runs = [single_run(p, el, environments) for el in q0s]
-    #     # return np.array(runs)
-    # end
 end
