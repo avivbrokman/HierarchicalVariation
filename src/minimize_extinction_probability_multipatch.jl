@@ -43,6 +43,12 @@ function setup_minimize_parser()
             default = 0.2
         "--use-educated-guess"
             action = :store_true
+        "--analyze-centers"
+            action = :store_true
+        "--tol"
+            arg_type = Float64
+            required = false
+            default = 1e-8
         "--q0"
             arg_type = Float64
             required = false
@@ -89,6 +95,12 @@ function setup_brute_force_minimize_parser()
             default = 100
         "--use-educated-guess"
             action = :store_true
+        "--analyze-centers"
+            action = :store_true
+        "--tol"
+            arg_type = Float64
+            required = false
+            default = 1e-8
         "--q0"
             arg_type = Float64
             required = false
@@ -167,15 +179,15 @@ function main()
     args = all_args[command]
     if command == "minimize"
         if "q0" ∈ keys(args)
-            return minimize_extinction_probability(args["fecundity"], args["delta"], args["alpha1"], args["beta1"],args["alpha2"], args["beta2"], args["p1"], args["save-dir"], args["population-size"], args["partition-mutation-rate"], args["use-educated-guess"], args["q0"], args["num-generations"], args["num-runs"])
+            return minimize_extinction_probability(args["fecundity"], args["delta"], args["alpha1"], args["beta1"],args["alpha2"], args["beta2"], args["p1"], args["save-dir"], args["population-size"], args["partition-mutation-rate"], args["use-educated-guess"], args["analyze-centers"], args["q0"], args["num-generations"], args["num-runs"])
         else
-            return minimize_extinction_probability(args["fecundity"], args["delta"], args["alpha1"], args["beta1"],args["alpha2"], args["beta2"], args["p1"], args["save-dir"], args["population-size"], args["partition-mutation-rate"], args["use-educated-guess"])
+            return minimize_extinction_probability(args["fecundity"], args["delta"], args["alpha1"], args["beta1"],args["alpha2"], args["beta2"], args["p1"], args["save-dir"], args["population-size"], args["partition-mutation-rate"], args["use-educated-guess"], args["analyze-centers"])
         end
     elseif command == "brute-force-minimize"
         if "q0" ∈ keys(args)
-            return minimize_extinction_probability(args["fecundity"], args["delta"], args["alpha1"], args["beta1"], args["alpha2"], args["beta2"], args["p1"], args["save-dir"], args["population-size"], args["use-educated-guess"], args["q0"], args["num-generations"], args["num-runs"])
+            return minimize_extinction_probability(args["fecundity"], args["delta"], args["alpha1"], args["beta1"], args["alpha2"], args["beta2"], args["p1"], args["save-dir"], args["population-size"], args["use-educated-guess"], args["analyze-centers"], args["q0"], args["num-generations"], args["num-runs"])
         else
-            return minimize_extinction_probability(args["fecundity"], args["delta"], args["alpha1"], args["beta1"], args["alpha2"], args["beta2"], args["p1"], args["save-dir"], args["population-size"], args["use-educated-guess"])
+            return minimize_extinction_probability(args["fecundity"], args["delta"], args["alpha1"], args["beta1"], args["alpha2"], args["beta2"], args["p1"], args["save-dir"], args["population-size"], args["use-educated-guess"], args["analyze-centers"], args["tol"])
         end
     end
 end

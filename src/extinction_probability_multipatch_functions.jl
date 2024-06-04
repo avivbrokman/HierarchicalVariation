@@ -19,15 +19,15 @@ module ExtinctionMultipatch
     using StatsBase
     using Profile
 
-    export survival_interval, get_survival_intervals, segment_unit_interval_by_survival_overlap, get_segment_survival_counts, get_segment_probability, get_segment_probabilities, get_probabilities_in_patch_given_H, get_probabilities_given_H, get_probabilities, probabilities2extinction_coefficients!, get_extinction_prob_from_coefficients, get_extinction_prob
+    export survival_interval, get_survival_intervals, segment_unit_interval_by_survival_overlap, get_segment_survival_counts, get_segment_probability, get_segment_probabilities, get_probabilities_in_patch_given_H, get_probabilities_given_H, get_probabilities, probabilities2extinction_coefficients!, get_extinction_probability_from_coefficients, get_extinction_probability
     
     export f_eps, generate_environment_sequence, approximate_extinction_probability
 
     export make_objective_function, get_idx2partition, initialize_population
     
-    export survival_prob, maximize_survival_prob, near_mode_for_beta_mixture, candidate_push!, educated_guess, get_desc2priority, get_educated_guess_candidates_from_single_distributions, try_educated_guess, get_educated_guess_candidates, is_close, close_replace
+    export survival_probability, maximize_survival_probability, near_mode_for_beta_mixture, special_center_push!, educated_guess, get_special_centers_from_single_distributions, get_educated_guesses, try_educated_guesses, is_close, modify_description!, get_special_centers, find_matches
     
-    export save_results, minimize_extinction_probability, minimize_partition_extinction_probability
+    export save_results, minimize_extinction_probability, minimize_partition_extinction_probability, get_partitions, partition2signature
 
     # export Beta, Interval, cdf, Polynomial, roots
 
@@ -120,7 +120,7 @@ module ExtinctionMultipatch
         probabilities[2] -= 1
     end 
 
-    function get_extinction_prob(coefficients::Vector{Float64})
+    function get_extinction_probability_from_coefficients(coefficients::Vector{Float64})
         # make polynomial
         # coefficients_vector = [coefficients[i] for i in 0:maximum(keys(coefficients))]
 
@@ -138,16 +138,16 @@ module ExtinctionMultipatch
         positive_roots = filter(root -> root >= 0, real_roots)
 
         # get lower root
-        extinction_prob = minimum(positive_roots)
+        extinction_probability = minimum(positive_roots)
 
-        return extinction_prob
+        return extinction_probability
     end
 
     # survival = s, environment = ϵ, generating_fun_coef_by_environment = p
     function f_eps(survival, environment, generating_fun_coef_by_environment)
         # print("f_eps")
         conditional_generating_fun_coef = generating_fun_coef_by_environment[environment]
-        val = sum(el * survival^i for (i, el) in enumerate(conditional_generating_fun_coef))
+        val = sum(el * survival^(i-1) for (i, el) in enumerate(conditional_generating_fun_coef))
         return val
     end
     
@@ -181,15 +181,15 @@ module ExtinctionMultipatch
     function approximate_extinction_probability(probabilities_by_environment, q0, p1, num_generations, num_runs)
         # print("approximate 33333")
 
-        extinction_prob_runs = [approximate_extinction_probability(probabilities_by_environment, q0, p1, num_generations) for el in 1:num_runs]
+        extinction_probability_runs = [approximate_extinction_probability(probabilities_by_environment, q0, p1, num_generations) for el in 1:num_runs]
 
-        extinction_prob = mean(extinction_prob_runs)
+        extinction_probability = mean(extinction_probability_runs)
 
-        return extinction_prob
+        return extinction_probability
     end
 
     ## workhorse function
-    function get_extinction_prob(centers, partition, delta, alpha1, beta1, alpha2, beta2, p1, fecundity) 
+    function get_extinction_probability(centers, partition, delta, alpha1, beta1, alpha2, beta2, p1, fecundity) 
         # get Distributions
         dist1 = Beta(alpha1, beta1)
         dist2 = Beta(alpha2, beta2)
@@ -218,12 +218,12 @@ module ExtinctionMultipatch
         
         probabilities2extinction_coefficients!(probabilities)
 
-        extinction_prob = get_extinction_prob_from_coefficients(probabilities)
+        extinction_probability = get_extinction_probability_from_coefficients(probabilities)
 
-        return extinction_prob
+        return extinction_probability
     end
 
-    function get_extinction_prob(centers, partition, delta, alpha1, beta1, alpha2, beta2, p1, fecundity, q0, num_generations, num_runs) 
+    function get_extinction_probability(centers, partition, delta, alpha1, beta1, alpha2, beta2, p1, fecundity, q0, num_generations, num_runs) 
         # get Distributions
         dist1 = Beta(alpha1, beta1)
         dist2 = Beta(alpha2, beta2)
@@ -250,20 +250,20 @@ module ExtinctionMultipatch
 
         probabilities_by_environment = [probabilities_given_H1, probabilities_given_H2]
 
-        extinction_prob = approximate_extinction_probability(probabilities_by_environment, q0, p1, num_generations, num_runs)
+        extinction_probability = approximate_extinction_probability(probabilities_by_environment, q0, p1, num_generations, num_runs)
 
-        return extinction_prob
+        return extinction_probability
     end
 
     ################### Necessary for running DE
     ## using a closure as a workaround because DE's objective function must take a single vector as input
-    function make_objective_function(fecundity::Int64, delta::Float64, alpha1::Float64, beta1::Float64, alpha2::Float64, beta2::Float64, p1::Float64, idx2partition::Dict, args...)
+    function make_objective_function(fecundity::Int64, delta::Float64, alpha1::Number, beta1::Number, alpha2::Number, beta2::Number, p1::Number, idx2partition::Dict, args...)
         function objective_function(vars)
             centers = vars[1:fecundity]
             partition_idx = vars[end]
             partition = idx2partition[partition_idx]
-            extinction_prob = get_extinction_prob(centers, partition, delta, alpha1, beta1, alpha2, beta2, p1, fecundity, args...)
-            return extinction_prob
+            extinction_probability = get_extinction_probability(centers, partition, delta, alpha1, beta1, alpha2, beta2, p1, fecundity, args...)
+            return extinction_probability
         end
 
         return objective_function
@@ -276,11 +276,11 @@ module ExtinctionMultipatch
     end
 
     # brute force functions
-    function make_objective_function(partition::Vector{Vector{Int64}}, fecundity::Int64, delta::Float64, alpha1::Float64, beta1::Float64, alpha2::Float64, beta2::Float64, p1::Float64, args...)
+    function make_objective_function(partition::Vector{Vector{Int64}}, fecundity::Int64, delta::Float64, alpha1::Number, beta1::Number, alpha2::Number, beta2::Number, p1::Number, args...)
         function objective_function(vars)
             centers = vars[1:fecundity]
-            extinction_prob = get_extinction_prob(centers, partition, delta, alpha1, beta1, alpha2, beta2, p1, fecundity, args...)
-            return extinction_prob
+            extinction_probability = get_extinction_probability(centers, partition, delta, alpha1, beta1, alpha2, beta2, p1, fecundity, args...)
+            return extinction_probability
         end
 
         return objective_function
@@ -301,20 +301,20 @@ module ExtinctionMultipatch
 
     #################### Educated guessing
 
-    function survival_prob(center, delta, alpha, beta)
+    function survival_probability(center, delta, alpha, beta)
         dist = Beta(alpha, beta)
         return cdf(dist, center + delta) - cdf(dist, center - delta)
     end
 
-    function survival_prob(center, delta, alpha1, beta1, alpha2, beta2, p1)
+    function survival_probability(center, delta, alpha1, beta1, alpha2, beta2, p1)
         dist = MixtureModel(Beta, [(alpha1, beta1), (alpha2, beta2)], [p1, 1-p1])
 
         return cdf(dist, center + delta) - cdf(dist, center - delta)
     end
 
-    function maximize_survival_prob(delta, alpha, beta)
+    function maximize_survival_probability(delta, alpha, beta)
         
-        objective = center -> -survival_prob(center[1], delta, alpha, beta)
+        objective = center -> -survival_probability(center[1], delta, alpha, beta)
         
         if alpha > 1 && beta > 1
             if alpha == beta
@@ -359,274 +359,193 @@ module ExtinctionMultipatch
     return best, desc
     end
 
-    function maximize_survival_prob(delta, alpha, beta)
+    function modify_description!(description::String, modifier)
+        description *= modifier
+    end
+
+    function modify_description!(description::Nothing, modifier)
+    end
+
+    function modify_description!(description::Vector, modifier)
+        for el in description
+            modify_description!(el, modifier)
+        end
+    end
+
+    function maximize_survival_probability(delta, alpha, beta, description_modifier = "")
         
-        objective = center -> -survival_prob(center[1], delta, alpha, beta)
+        objective = center -> -survival_probability(center[1], delta, alpha, beta)
         
 
         if alpha == beta == 1
             @warn "std uniform dist"
             best = nothing
-            desc = nothing
+            description = nothing
         elseif alpha == beta < 1
             @warn "two best: delta and 1 - delta"
             best = [delta, 1 - delta]
-            desc = ["best", "best"]
+            description = ["best", "best"]
         elseif alpha == beta > 1
             alpha == beta
             best = 0.5
-            desc = "best"
+            description = "best"
         elseif alpha > 1 && beta > 1 && alpha != beta
             dist = Beta(alpha, beta)
             guess = [mode(dist)]
             guess = clamp.(guess, delta, 1-delta)
             solution = optimize(objective, [delta], [1 - delta], guess, Fminbox(LBFGS()), Optim.Options(show_trace=false))
             best = solution.minimizer[1]
-            desc = "best"
+            description = "best"
         elseif 1 <= alpha > beta <= 1
             best = 1 - delta
-            desc = "best"
+            description = "best"
         elseif 1 <= beta > alpha <= 1
             best = delta
-            desc = "best"
+            description = "best"
         elseif 1 > alpha > beta
             best = [1 - delta, delta]
-            desc = ["best", "good"]
+            description = ["best", "good"]
         elseif 1 > beta > alpha
             best = [delta, 1 -  delta]
-            desc = ["best", "good"]        
+            description = ["best", "good"]        
         end
-    return best, desc
+
+        modify_description!(description, description_modifier)
+        
+        return best, description
     end
     
     function near_mode_for_beta_mixture(alpha1, beta1, alpha2, beta2, p1)
         dist = MixtureModel(Beta, [(alpha1, beta1), (alpha2, beta2)], [p1, 1-p1])
 
-        sample = [pdf(dist, el) for el in 0:0.01:1]
+        sample_ = [pdf(dist, el) for el in 0:0.001:1]
 
-        return sample[argmax(sample)]
+        return sample_[argmax(sample_)]
     end
 
-    function is_close(val1, val2, tol = 1e-8)
-        return abs(val1 - val2) < tol
-    end
-
-    function close_replace(candidate, desc, optimized, tol = 1e-8)
-        if is_close(val1, val2, tol)
-            return candidate, desc
-        else
-            return optimized, nothing
+    function special_center_push!(special_centers::Vector, descriptions::Vector, new_center::Float64, new_description::String)
+        if (new_center, new_description) ∉ zip(special_centers, descriptions)
+            push!(special_centers, new_center)
+            push!(descriptions, new_description)
         end
     end
 
-    function try_educated_guess(center::Float64, center_survival_prob::Float64, candidates::Vector{Float64}, descriptions::Vector{String}, delta::Float64, alpha1::Float64, beta1::Float64, alpha2::Float64, beta2::Float64, p1::Float64)
-        desc = "nothing"
-        for (el_cand, el_desc) in zip(candidates, descriptions)
-            if is_close(el_cand, center)
-                new_survival_prob = survival_prob(el_cand, delta, alpha1, beta1, alpha2, beta2, p1)
-                center = el_cand
-                center_survival_prob = new_survival_prob
-                desc = el_desc
-            else
-                new_survival_prob = survival_prob(el_cand, delta, alpha1, beta1, alpha2, beta2, p1)
-                if new_survival_prob >= center_survival_prob
-                    center = el_cand
-                    center_survival_prob = new_survival_prob
-                    desc = el_desc
-                end
-            end
-        end
-        return center, desc
+    function special_center_push!(special_centers::Vector, descriptions::Vector, new_center::Nothing, new_description::Nothing)
     end
-    
-    function maximize_survival_prob(delta, alpha1, beta1, alpha2, beta2, p1)
+    function special_center_push!(special_centers::Vector, descriptions::Vector, new_center::Nothing, new_description::String)
+    end
+
+    function special_center_push!(special_centers::Vector, descriptions::Vector, new_centers::Vector, new_descriptions::Vector)
+        for (el_cent, el_desc) in zip(new_centers, new_descriptions)
+            special_center_push!(special_centers, descriptions, el_cent, el_desc)
+        end
+    end
+
+    function get_special_centers_from_single_distributions(delta, alpha1, beta1, alpha2, beta2, p1)
         
-        objective = center -> -survival_prob(center[1], delta, alpha1, beta1, alpha2, beta2, p1)
+        special_centers = Float64[]
+        descriptions = String[]
+        
+        # maximize surv porb in single distributions
+        if (alpha1, beta1) == (alpha2, beta2) || p1 == 1
+            special_center, description = maximize_survival_probability(delta, alpha1, beta1)
+            special_center_push!(special_centers, descriptions, special_center, description)
+            return special_centers, descriptions
+        elseif p1 == 0.5
+            special_centers1, descriptions1 = maximize_survival_probability(delta, alpha1, beta1)
+            special_centers2, descriptions2 = maximize_survival_probability(delta, alpha2, beta2)
+        else
+            special_centers1, descriptions1 = maximize_survival_probability(delta, alpha1, beta1, "major_")
+            special_centers2, descriptions2 = maximize_survival_probability(delta, alpha2, beta2, "minor_")
+        end
+
+        special_center_push!(special_centers, descriptions, special_centers1, descriptions1)
+        special_center_push!(special_centers, descriptions, special_centers2, descriptions2)
+
+        return special_centers, descriptions
+    end 
+
+    function maximize_survival_probability(delta, alpha1, beta1, alpha2, beta2, p1)
+        
+        objective = center -> -survival_probability(center[1], delta, alpha1, beta1, alpha2, beta2, p1)
 
         if alpha1 == beta1 == alpha2 == beta2 == 1 || (alpha1 == beta1 == 1 && p1 == 1) || (alpha1 == beta2 == 2 && alpha2 == beta1 == 1) # uniform dist
             # all centers equal
             @warn "Std Uniform distribution"
-            return nothing, nothing
+            return nothing
         else 
-            # dist = MixtureModel(Beta, [(alpha1, beta1), (alpha2, beta2)], [p1, 1-p1])
             guess = [near_mode_for_beta_mixture(alpha1, beta1, alpha2, beta2, p1)]
             guess = clamp.(guess, delta, 1-delta)
             solution = optimize(objective, [delta], [1 - delta], guess, Fminbox(LBFGS()), Optim.Options(show_trace=false))
 
             # best = solution.u
             best = solution.minimizer[1]
-            value = -solution.minimum
+            # value = -solution.minimum
 
-            # educated guessing
-            candidates, descriptions = get_educated_guess_candidates_from_single_distributions(delta, alpha1, beta1, alpha2, beta2)
-
-            best, desc = try_educated_guess(best, value, candidates, descriptions, delta, alpha1, beta1, alpha2, beta2, p1)
-
-            return best, desc
+            return best
         end
-     end     
+    end 
 
+    function get_special_centers(delta, alpha1, beta1, alpha2, beta2, p1)
 
-    function get_desc2priority()
-        priority_order = ["best", "mean_max", "good", "mean_max_complement", "N/A"]
-        desc2priority = Dict(zip(priority_order, 1:length(priority_order)))
-
-        return desc2priority
-    end
-    #Vector{Union{Float64, Nothing}}()
-    function candidate_push!(candidate_vector::Vector, desc_vector::Vector, candidate::Union{Float64, Nothing}, desc::Union{String, Nothing}, desc2priority::Dict)
-        if isnothing(candidate)
-            nothing 
-        elseif candidate ∉ candidate_vector 
-            push!(candidate_vector, candidate)
-            push!(desc_vector, desc)
-        else
-            # index = findfirst(isequal(candidate), candidate_vector)
-            index = findfirst(x -> is_close(x, candidate), candidate_vector)
-            old_desc = desc_vector[index]
-            old_priority = desc2priority[old_desc]
-            new_priority = desc2priority[desc]
-            if new_priority < old_priority
-                deleteat!(candidate_vector, index)
-                deleteat!(desc_vector, index)
-                push!(candidate_vector, candidate)
-                push!(desc_vector, desc)
-            end
-        end
-    end
-
-    function candidate_push!(candidate_vector::Vector, desc_vector::Vector, candidate::Union{Float64, Nothing}, desc::Union{String, Nothing}, desc2priority::Dict)
-        if isnothing(candidate)
-            nothing 
-        elseif candidate ∉ candidate_vector 
-            index = findfirst(x -> is_close(x, candidate), candidate_vector)
-            if isnothing(index)
-                push!(candidate_vector, candidate)
-                push!(desc_vector, desc)
-            else
-                old_desc = desc_vector[index]
-                old_priority = desc2priority[old_desc]
-                new_priority = desc2priority[desc]
-                if new_priority < old_priority
-                    deleteat!(candidate_vector, index)
-                    deleteat!(desc_vector, index)
-                    push!(candidate_vector, candidate)
-                    push!(desc_vector, desc)
-                end
-            end
-        else
-            # index = findfirst(isequal(candidate), candidate_vector)
-            index = findfirst(x -> is_close(x, candidate), candidate_vector)
-            old_desc = desc_vector[index]
-            old_priority = desc2priority[old_desc]
-            new_priority = desc2priority[desc]
-            if new_priority < old_priority
-                deleteat!(candidate_vector, index)
-                deleteat!(desc_vector, index)
-                push!(candidate_vector, candidate)
-                push!(desc_vector, desc)
-            end
-        end
-    end
-
-    function candidate_push!(candidate_vector::Vector{Float64}, desc_vector::Vector{String}, candidates::Vector, descs::Vector, desc2priority::Dict)
-        for (el_cand, el_desc) in zip(candidates, descs)
-            candidate_push!(candidate_vector, desc_vector, el_cand, el_desc, desc2priority)
-        end
-    end
-
-    function get_educated_guess_candidates_from_single_distributions(delta, alpha1, beta1, alpha2, beta2)
-        
-        desc2priority = get_desc2priority()
-        
-        # candidates = Vector{Union{Float64, Nothing}}()
-        # descriptions = Vector{Union{String, Nothing}}()
-
-        candidates = Float64[]
-        descriptions = String[]
-        
-        # maximize surv porb in single distributions
-        candidates1, descriptions1 = maximize_survival_prob(delta, alpha1, beta1)
-        candidates2, descriptions2 = maximize_survival_prob(delta, alpha2, beta2)
-
-        candidate_push!(candidates, descriptions, candidates1, descriptions1, desc2priority)
-        candidate_push!(candidates, descriptions, candidates2, descriptions2, desc2priority)
-
-        return candidates, descriptions
-    end
-
-    function get_educated_guess_candidates(delta, alpha1, beta1, alpha2, beta2, p1)
-        desc2priority = get_desc2priority()
-
-        candidates, descriptions = get_educated_guess_candidates_from_single_distributions(delta, alpha1, beta1, alpha2, beta2)
+        special_centers, descriptions = get_special_centers_from_single_distributions(delta, alpha1, beta1, alpha2, beta2, p1)
 
         # maximize surv prob in mixture dist
-        candidate3, description3 = maximize_survival_prob(delta, alpha1, beta1, alpha2, beta2, p1)
-        # if isnothing(description3)
-        #     description3 = "mean_max"
-        # end
-        # push!(candidates, candidate3)
-        # push!(descriptions, description3)
-        candidate_push!(candidates, descriptions, candidate3, description3, desc2priority)
-
+        special_center3 = maximize_survival_probability(delta, alpha1, beta1, alpha2, beta2, p1)
+        description3 = "mean-maximizer"
         
+        special_center_push!(special_centers, descriptions, special_center3, description3)
+
         # might have eq surv prob to candidate3 in mixture dist or may be local max
-        candidate4 = 1 - candidate3
-        description4 = "mean_max_complement"
-        # push!(candidates, candidate4)
-        # push!(descriptions, description4)
-        candidate_push!(candidates, descriptions, candidate4, description4, desc2priority)
+        
+        if (alpha1, beta1) != (alpha2, beta2) && p1 != 1 && !isnothing(special_center3)
+            special_center4 = 1 - special_center3
+            description4 = "mean-maximizer-complement"
 
-
-        return candidates, descriptions
-    end
-
-    function educated_guess(optimized, candidates, descriptions)
-        # candidates, descriptions = get_educated_guess_candidates(delta, alpha1, beta1, alpha2, beta2, p1)
-
-        distances = Float64[]
-        guess_types = String[]
-        for (el_cand, el_desc) in zip(candidates, descriptions)
-            push!(distances, abs(optimized - el_cand))
-            push!(guess_types, el_desc)
+            special_center_push!(special_centers, descriptions, special_center4, description4)
         end
-        best_idx = argmin(distances)
-        guess = candidates[best_idx]
-        guess_type = guess_types[best_idx]
 
-        return guess, guess_type
+        return special_centers, descriptions
     end
 
-    function try_educated_guess(centers::Vector{Float64}, partition::Vector{Vector{Int64}}, extinction_probability::Float64, candidates::Vector{Float64}, descriptions::Vector{String}, delta::Float64, alpha1::Float64, beta1::Float64, alpha2::Float64, beta2::Float64, p1::Float64, args...)
+    function get_educated_guesses(special_centers)
+        return unique(special_centers)
+    end
+
+    function try_educated_guesses(centers::Vector{Float64}, partition::Vector{Vector{Int64}}, extinction_probability::Float64, candidates::Vector{Float64}, delta::Float64, alpha1::Number, beta1::Number, alpha2::Number, beta2::Number, p1::Number, args...)
         fecundity = length(centers)
-        replaced_by = fill("N/A", fecundity)
         is_altered = true
         while is_altered
             is_altered = false
             for i in 1:fecundity
                 new_centers = copy(centers)
-                for (el_cand, el_desc) in zip(candidates, descriptions)
-                    if el_cand == centers[i]
-                        is_altered = false
-                    elseif is_close(el_cand, centers[i])
-                        centers[i] = el_cand
-                        replaced_by[i] = el_desc
+                for el in candidates
+                    new_centers[i] = el
+                    new_extinction_probability = get_extinction_probability(new_centers, partition, delta, alpha1, beta1, alpha2, beta2, p1, fecundity, args...)
+                    if new_extinction_probability < extinction_probability
+                        centers = new_centers
+                        extinction_probability = new_extinction_probability
                         is_altered = true
-                    else
-                        new_centers[i] = el_cand
-                        new_extinction_probability = get_extinction_prob(new_centers, partition, delta, alpha1, beta1, alpha2, beta2, p1, fecundity, args...)
-                        if new_extinction_probability <= extinction_probability
-                            centers = new_centers
-                            extinction_probability = new_extinction_probability
-                            replaced_by[i] = el_desc
-                            is_altered = true
-                        end
                     end
                 end
             end
         end
-        return centers, replaced_by, extinction_probability
+        return centers, extinction_probability
     end
+
+    ################ post-hoc analysis
+    function is_close(val1, val2, tol = 1e-8)
+        return abs(val1 - val2) < tol
+    end
+
+    function find_matches(center::Float64, special_centers, descriptions, tol)
+        return [(el_cent, el_desc) for (el_cent, el_desc) in zip(special_centers, descriptions) if is_close(center, el_cent, tol)]
+    end
+
+    function find_matches(centers::Vector{Float64}, special_centers, descriptions, tol)
+        return [find_matches(el, special_centers, descriptions, tol) for el in centers]
+    end
+    
      
     #################### helper functions
     function save_results(output, save_dir)
@@ -646,65 +565,65 @@ module ExtinctionMultipatch
     end
 
     ############### running everything
-    function minimize_extinction_probability(fecundity::Int64, delta::Float64, alpha1::Float64, beta1::Float64, alpha2::Float64, beta2::Float64, p1::Float64, save_dir::String, population_size::Int64, partition_mutation_rate::Float64, use_educated_guess::Bool, args...)
+    # function minimize_extinction_probability(fecundity::Int64, delta::Float64, alpha1::Number, beta1::Number, alpha2::Number, beta2::Number, p1::Number, save_dir::String, population_size::Int64, partition_mutation_rate::Float64, use_educated_guess::Bool, analyze_centers::Bool, tol::Float64, args...)
         
-        Random.seed!(0)
+    #     Random.seed!(0)
 
-        idx2partition = get_idx2partition(fecundity)
+    #     idx2partition = get_idx2partition(fecundity)
 
-        objective_function = make_objective_function(fecundity, delta, alpha1, beta1, alpha2, beta2, p1, idx2partition, args...)
+    #     objective_function = make_objective_function(fecundity, delta, alpha1, beta1, alpha2, beta2, p1, idx2partition, args...)
 
-        initial_population = initialize_population(population_size, fecundity, idx2partition)
-        custom_differentiation = create_custom_differentiation(fecundity, partition_mutation_rate, idx2partition)
+    #     initial_population = initialize_population(population_size, fecundity, idx2partition)
+    #     custom_differentiation = create_custom_differentiation(fecundity, partition_mutation_rate, idx2partition)
 
-        lower_constraint = fill(delta, fecundity)
-        upper_constraint = fill(1-delta, fecundity)
-        lower_constraint = [lower_constraint; float(minimum(keys(idx2partition)))]
-        upper_constraint = [upper_constraint; float(maximum(keys(idx2partition)))]
-        constraints = CustomEvolutionary1.BoxConstraints(lower_constraint, upper_constraint)
+    #     lower_constraint = fill(delta, fecundity)
+    #     upper_constraint = fill(1-delta, fecundity)
+    #     lower_constraint = [lower_constraint; float(minimum(keys(idx2partition)))]
+    #     upper_constraint = [upper_constraint; float(maximum(keys(idx2partition)))]
+    #     constraints = CustomEvolutionary1.BoxConstraints(lower_constraint, upper_constraint)
 
-        de_algorithm = CustomEvolutionary1.DE(populationSize = population_size, differentiation = custom_differentiation)
+    #     de_algorithm = CustomEvolutionary1.DE(populationSize = population_size, differentiation = custom_differentiation)
 
-        results = CustomEvolutionary1.optimize(objective_function, constraints, de_algorithm, initial_population)
+    #     results = CustomEvolutionary1.optimize(objective_function, constraints, de_algorithm, initial_population)
 
-        # exctract results
-        centers = results.minimizer[1:fecundity]
-        partition = idx2partition[results.minimizer[end]]
-        extinction_probability = results.minimum
+    #     # exctract results
+    #     centers = results.minimizer[1:fecundity]
+    #     partition = idx2partition[results.minimizer[end]]
+    #     extinction_probability = results.minimum
 
-        # educated guess true optimum
-        if use_educated_guess
-            candidates, descriptions = get_educated_guess_candidates(delta, alpha1, beta1, alpha2, beta2, p1)
-            centers, replaced_by, extinction_probability = try_educated_guess(centers, partition, extinction_probability, candidates, descriptions, delta, alpha1, beta1, alpha2, beta2, p1, args...)
-        end
+    #     # educated guess true optimum
+    #     if use_educated_guess
+    #         candidates, descriptions = get_educated_guesses(delta, alpha1, beta1, alpha2, beta2, p1)
+    #         centers, replaced_by, extinction_probability = try_educated_guesses(centers, partition, extinction_probability, candidates, descriptions, delta, alpha1, beta1, alpha2, beta2, p1, args...)
+    #     end
 
-        # gets mean fitness maximizer 
-        # mean_maximizer = maximize_survival_prob(delta, alpha1, beta1, alpha2, beta2, p1)
+    #     # gets mean fitness maximizer 
+    #     # mean_maximizer = maximize_survival_prob(delta, alpha1, beta1, alpha2, beta2, p1)
 
-        # output
-        output = Dict("fecundity" => fecundity,
-                    "delta" => delta,
-                    "alpha1" => alpha1,
-                    "beta1" => beta1,
-                    "alpha2" => alpha2,
-                    "beta2" => beta2,
-                    "p1" => p1,
-                    "centers" => centers,
-                    "partition" => partition,
-                    "extinction_probability" => extinction_probability
-                    )
+    #     # output
+    #     output = Dict("fecundity" => fecundity,
+    #                 "delta" => delta,
+    #                 "alpha1" => alpha1,
+    #                 "beta1" => beta1,
+    #                 "alpha2" => alpha2,
+    #                 "beta2" => beta2,
+    #                 "p1" => p1,
+    #                 "centers" => centers,
+    #                 "partition" => partition,
+    #                 "extinction_probability" => extinction_probability
+    #                 )
 
-        if use_educated_guess
-            output["replaced_by"] = replaced_by
-            output["special_centers"] = hcat(candidates, descriptions)
-        end
+    #     if use_educated_guess
+    #         output["replaced_by"] = replaced_by
+    #         output["special_centers"] = hcat(candidates, descriptions)
+    #     end
         
-        save_results(output, save_dir)
+    #     save_results(output, save_dir)
 
-        return output
-    end
+    #     return output
+    # end
 
-    function minimize_partition_extinction_probability(partition::Vector{Vector{Int64}}, fecundity::Int64, delta::Float64, alpha1::Float64, beta1::Float64, alpha2::Float64, beta2::Float64, p1::Float64, population_size::Int64, use_educated_guess::Bool, args...)
+    function minimize_partition_extinction_probability(partition::Vector{Vector{Int64}}, fecundity::Int64, delta::Float64, alpha1::Number, beta1::Number, alpha2::Number, beta2::Number, p1::Number, population_size::Int64, use_educated_guess::Bool, analyze_centers::Bool, tol::Float64, args...)
 
         # idx2partition = get_idx2partition(fecundity)
 
@@ -724,12 +643,30 @@ module ExtinctionMultipatch
         centers = results.minimizer[1:fecundity]
         extinction_probability = results.minimum
 
+        if use_educated_guess || analyze_centers
+            special_centers, descriptions = get_special_centers(delta, alpha1, beta1, alpha2, beta2, p1)
+        end
+
         # educated guess true optimum
         if use_educated_guess
-            print("start educated guess", "\n")
-            candidates, descriptions = get_educated_guess_candidates(delta, alpha1, beta1, alpha2, beta2, p1)
-            centers, replaced_by, extinction_probability = try_educated_guess(centers, partition, extinction_probability, candidates, descriptions, delta, alpha1, beta1, alpha2, beta2, p1, args...)
-            print("end educated guess", "\n")
+            # print("start educated guess", "\n")
+            candidates = get_educated_guesses(special_centers)
+            centers, extinction_probability = try_educated_guesses(centers, partition, extinction_probability, candidates, delta, alpha1, beta1, alpha2, beta2, p1, args...)
+            # print("end educated guess", "\n")
+        end
+
+        if analyze_centers
+            if "mean-maximizer" ∈ descriptions 
+                index = findfirst(isequal("mean-maximizer"), descriptions)
+                mean_maximizer = special_centers[index]
+                mean_maximizer_matches = find_matches(mean_maximizer, special_centers, descriptions, tol)
+            end
+            if "mean-maximizer-complement" ∈ descriptions 
+                index = findfirst(isequal("mean-maximizer-complement"), descriptions)
+                mean_maximizer_complement = special_centers[index]
+                mean_maximizer_complement_matches = find_matches(mean_maximizer_complement, special_centers, descriptions, tol)
+            end
+            center_matches = find_matches(centers, special_centers, descriptions, tol)
         end
 
         # gets mean fitness maximizer 
@@ -748,38 +685,63 @@ module ExtinctionMultipatch
                     "extinction_probability" => extinction_probability
                     )
 
-        if use_educated_guess
-            output["replaced_by"] = replaced_by
-            output["special_centers"] = hcat(candidates, descriptions)
-            print("finished educated guess function", "\n")
+        if analyze_centers
+            if "mean-maximizer" ∈ descriptions
+                output["mean_maximizer_matches"] = mean_maximizer_matches
+            end
+            if "mean-maximizer-complement" ∈ descriptions
+                output["mean_maximizer_complement_matches"] = mean_maximizer_complement_matches
+            end
+            output["center_matches"] = center_matches
         end
-        
+
         return output
     end
 
-    function minimize_extinction_probability(fecundity::Int64, delta::Float64, alpha1::Float64, beta1::Float64, alpha2::Float64, beta2::Float64, p1::Float64, save_dir::String, population_size::Int64, use_educated_guess::Bool, args...)
+
+    function partition2signature(partition)
+        patch_sizes = [length(el) for el in partition]
+        return sort(patch_sizes)
+    end
+
+    function get_partitions(fecundity)
+        all_partitions = collect(partitions(1:fecundity))
+        
+        unique_partitions = []
+        signatures = []
+        for el in all_partitions
+            signature =  partition2signature(el)
+            if signature ∉ signatures
+                push!(unique_partitions, el)
+                push!(signatures, signature)
+            end
+        end
+        return unique_partitions
+    end
+
+    function minimize_extinction_probability(fecundity::Int64, delta::Float64, alpha1::Number, beta1::Number, alpha2::Number, beta2::Number, p1::Number, save_dir::String, population_size::Int64, use_educated_guess::Bool, analyze_centers::Bool, tol::Float64, args...)
 
         Random.seed!(0)
 
+        partitions = get_partitions(fecundity)
+
         extinction_probability = 10
         output = nothing
-
-        all_partitions = collect(partitions(1:fecundity))
         
-        for el in all_partitions
-            print("starting", "\n", el, "\n")
-            current_output = minimize_partition_extinction_probability(el, fecundity, delta, alpha1, beta1, alpha2, beta2, p1, population_size, use_educated_guess, args...)
+        for el in partitions
+            # print("starting", "\n", el, "\n")
+            current_output = minimize_partition_extinction_probability(el, fecundity, delta, alpha1, beta1, alpha2, beta2, p1, population_size, use_educated_guess, analyze_centers, tol, args...)
             
             if current_output["extinction_probability"] < extinction_probability
                 extinction_probability = current_output["extinction_probability"]
                 output = current_output
             end
-            print("finished", "\n", el, "\n")
+            # print("finished", "\n", el, "\n")
         end
 
-        print("saving", "\n")
+        # print("saving", "\n")
         save_results(output, save_dir)
-        print("saved", "\n")
+        # print("saved", "\n")
         return output
     end
 

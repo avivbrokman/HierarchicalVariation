@@ -50,3 +50,64 @@ inner(a,b,c,d) = a * b * c * d
 function outer(a,b,args...)
     inner(a,b,args...)
 end
+
+
+include("src/extinction_probability_multipatch_functions.jl")
+using .ExtinctionMultipatch
+
+fecundity = 4
+delta = 0.1
+alpha1s = [0.6, 0.9]
+p1s = [0.5, 0.6, 0.7, 0.8, 0.9, 1]
+
+alpha1 = 0.6
+p1 = 1.0
+
+beta1 = 1 - alpha1
+        
+alpha2 = beta1
+beta2 = alpha1
+
+save_dir = "hierarchical/fecundity$(fecundity)/delta$(delta)/bimodal/alpha1_$(alpha1)__p1_$(p1)"
+
+out = minimize_extinction_probability(fecundity, delta, alpha1, beta1, alpha2, beta2, p1, save_dir, population_size, true, true, 1e-8, 0.5, 75, 100)
+
+
+
+fecundity = 4
+delta = 0.1
+alpha1 = beta2 = 0.6
+alpha2 = beta1 = 0.4
+p1 = 0.5
+save_dir = "test"
+use_educated_guess = true
+analyze_centers = true
+population_size = 100
+num_generations = 75
+num_runs = 100
+tol = 1e-8
+q0 = 0.5
+num_generations = 75
+num_runs = 100
+
+partition = [[1,2,3,4]]
+
+out = minimize_partition_extinction_probability(partition, fecundity, delta, alpha1, beta1, alpha2, beta2, p1, population_size, use_educated_guess, analyze_centers, tol, q0, num_generations, num_runs)
+
+out = minimize_extinction_probability(fecundity, delta, alpha1, beta1, alpha2, beta2, p1, save_dir, population_size, use_educated_guess, analyze_centers, tol)
+
+
+objective_function = make_objective_function(partition, fecundity, delta, alpha1, beta1, alpha2, beta2, p1, q0, num_generations, num_runs)
+
+objective_function([0.1, 0.1, 0.1, 0.1])
+
+
+centers = [0.1, 0.3, 0.7, 0.9]
+
+get_extinction_probability(centers, partition, delta, alpha1, beta1, alpha2, beta2, p1, fecundity, q0, num_generations, num_runs)
+
+using Distributions
+
+approximate_extinction_probability2(probabilities_by_environment, q0, p1, num_generations)
+
+probabilities_by_environment = [[0.12194767121906397, 0.8780523287809361, 0.5, 0.0, 0.0]]
