@@ -19,7 +19,7 @@ module ExtinctionMultipatch
     using StatsBase
     using Profile
 
-    export survival_interval, get_survival_intervals, segment_unit_interval_by_survival_overlap, get_segment_survival_counts, get_segment_probability, get_segment_probabilities, get_probabilities_in_patch_given_H, get_probabilities_given_H, get_probabilities, probabilities2extinction_coefficients!, get_extinction_probability_from_coefficients, get_extinction_probability
+    export survival_interval, get_survival_intervals, segment_unit_interval_by_survival_overlap, get_segment_survival_counts, get_segment_probability, get_segment_probabilities, get_probabilities_in_patch_given_H, get_probabilities_given_H, get_probabilities, probabilities2extinction_coefficients!, get_extinction_probability_from_coefficients, get_extinction_probability, multiply_simulate_extinction_probability
     
     export f_eps, generate_environment_sequence, approximate_extinction_probability
 
@@ -111,8 +111,8 @@ module ExtinctionMultipatch
         return probabilities
     end
 
-    function get_probabilities(probabilities1, probabilities2, p1)
-        return p1 .* probabilities1 + (1-p1) .* probabilities2
+    function get_probabilities(probabilities_by_environment, p1)
+        return p1 .* probabilities_by_environment[1] + (1-p1) .* probabilities_by_environment[2]
     end
 
     ## converting overall survival probabilities into extinction probability
@@ -178,52 +178,26 @@ module ExtinctionMultipatch
         return q
     end
 
+    function multiply_simulate_extinction_probability(probabilities_by_environment, q0, p1, num_generations, num_runs)
+
+        extinction_probability_runs = [approximate_extinction_probability(probabilities_by_environment, q0, p1, num_generations) for _ in 1:num_runs]
+
+        return extinction_probability_runs
+    end
+
+
     function approximate_extinction_probability(probabilities_by_environment, q0, p1, num_generations, num_runs)
         # print("approximate 33333")
 
-        extinction_probability_runs = [approximate_extinction_probability(probabilities_by_environment, q0, p1, num_generations) for el in 1:num_runs]
+        extinction_probability_runs = multiply_simulate_extinction_probability(probabilities_by_environment, q0, p1, num_generations, num_runs)
 
         extinction_probability = mean(extinction_probability_runs)
 
         return extinction_probability
     end
 
-    ## workhorse function
-    function get_extinction_probability(centers, partition, delta, alpha1, beta1, alpha2, beta2, p1, fecundity) 
-        # get Distributions
-        dist1 = Beta(alpha1, beta1)
-        dist2 = Beta(alpha2, beta2)
-        
-        # get intervals
-        intervals = get_survival_intervals(centers, delta)
+    function get_probabilities_by_environment(centers, partition, delta, alpha1, beta1, alpha2, beta2, fecundity) 
 
-        patch_probabilities_given_H1_by_patch = Vector{Dict{Int64, Float64}}()
-        patch_probabilities_given_H2_by_patch = Vector{Dict{Int64, Float64}}()
-
-        for (i, members) in enumerate(partition)
-            patch_intervals = [intervals[i] for i in members]
-            segments, segment_survival_counts = get_segment_survival_counts(patch_intervals)
-            
-            segment_probabilities_given_H1 = get_segment_probabilities(segments, dist1)
-            segment_probabilities_given_H2 = get_segment_probabilities(segments, dist2)
-
-            push!(patch_probabilities_given_H1_by_patch, get_probabilities_in_patch_given_H(segment_survival_counts, segment_probabilities_given_H1, fecundity))
-            push!(patch_probabilities_given_H2_by_patch, get_probabilities_in_patch_given_H(segment_survival_counts, segment_probabilities_given_H2, fecundity))
-        end
-
-        probabilities_given_H1 = get_probabilities_given_H(patch_probabilities_given_H1_by_patch, fecundity)
-        probabilities_given_H2 = get_probabilities_given_H(patch_probabilities_given_H2_by_patch, fecundity)
-
-        probabilities = get_probabilities(probabilities_given_H1, probabilities_given_H2, p1)
-        
-        probabilities2extinction_coefficients!(probabilities)
-
-        extinction_probability = get_extinction_probability_from_coefficients(probabilities)
-
-        return extinction_probability
-    end
-
-    function get_extinction_probability(centers, partition, delta, alpha1, beta1, alpha2, beta2, p1, fecundity, q0, num_generations, num_runs) 
         # get Distributions
         dist1 = Beta(alpha1, beta1)
         dist2 = Beta(alpha2, beta2)
@@ -249,6 +223,27 @@ module ExtinctionMultipatch
         probabilities_given_H2 = get_probabilities_given_H(patch_probabilities_given_H2_by_patch, fecundity)
 
         probabilities_by_environment = [probabilities_given_H1, probabilities_given_H2]
+
+        return probabilities_by_environment
+    end
+    
+
+    function get_extinction_probability(centers, partition, delta, alpha1, beta1, alpha2, beta2, p1, fecundity) 
+        
+        probabilities_by_environment = get_probabilities_by_environment(centers, partition, delta, alpha1, beta1, alpha2, beta2, fecundity)
+
+        probabilities = get_probabilities(probabilities_by_environment, p1)
+        
+        probabilities2extinction_coefficients!(probabilities)
+
+        extinction_probability = get_extinction_probability_from_coefficients(probabilities)
+
+        return extinction_probability
+    end
+
+    function get_extinction_probability(centers, partition, delta, alpha1, beta1, alpha2, beta2, p1, fecundity, q0, num_generations, num_runs) 
+        
+        probabilities_by_environment = get_probabilities_by_environment(centers, partition, delta, alpha1, beta1, alpha2, beta2, fecundity)
 
         extinction_probability = approximate_extinction_probability(probabilities_by_environment, q0, p1, num_generations, num_runs)
 
@@ -532,6 +527,9 @@ module ExtinctionMultipatch
         end
         return centers, extinction_probability
     end
+    
+    ####### robust comparison across partitions
+    
 
     ################ post-hoc analysis
     function is_close(val1, val2, tol = 1e-8)
@@ -719,9 +717,9 @@ module ExtinctionMultipatch
         return unique_partitions
     end
 
-    function minimize_extinction_probability(fecundity::Int64, delta::Float64, alpha1::Number, beta1::Number, alpha2::Number, beta2::Number, p1::Number, save_dir::String, population_size::Int64, use_educated_guess::Bool, analyze_centers::Bool, tol::Float64, args...)
+    function minimize_extinction_probability(fecundity::Int64, delta::Float64, alpha1::Number, beta1::Number, alpha2::Number, beta2::Number, p1::Number, save_dir::String, population_size::Int64, use_educated_guess::Bool, analyze_centers::Bool, tol::Float64, seed::Number = 0, args...)
 
-        Random.seed!(0)
+        Random.seed!(seed)
 
         partitions = get_partitions(fecundity)
 
