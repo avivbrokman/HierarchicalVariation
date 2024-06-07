@@ -26,6 +26,8 @@ module ExtinctionMultipatch
     export make_objective_function, get_idx2partition, initialize_population
     
     export survival_probability, maximize_survival_probability, near_mode_for_beta_mixture, special_center_push!, educated_guess, get_special_centers_from_single_distributions, get_educated_guesses, try_educated_guesses, is_close, modify_description!, get_special_centers, find_matches
+
+    export get_extinction_probability_runs, col_argmin, find_robust_optimizer
     
     export save_results, minimize_extinction_probability, minimize_partition_extinction_probability, get_partitions, partition2signature
 
@@ -529,7 +531,46 @@ module ExtinctionMultipatch
     end
     
     ####### robust comparison across partitions
+    function col_argmin(matrix::Matrix)
+        cartesian_argmin = argmin(matrix, dims = 1)
+        return [el[1] for el in cartesian_argmin]
+    end
     
+    function col_argmin(data::Vector{Vector{Float64}})
+        matrix = hcat(data...)
+        matrix = transpose(matrix)
+        matrix = collect(matrix)
+        return col_argmin(matrix)
+    end
+    
+    function get_extinction_probability_runs(centers, partition, delta, alpha1, beta1, alpha2, beta2, p1, fecundity, q0, num_generations, num_runs)
+        
+        Random.seed!(1)
+
+        probabilities_by_environment = get_probabilities_by_environment(centers, partition, delta, alpha1, beta1, alpha2, beta2, fecundity) 
+
+        runs = multiply_simulate_extinction_probability(probabilities_by_environment, q0, p1, num_generations, num_runs)
+            
+        return runs
+    end
+    
+    function get_extinction_probability_runs(partition_results, delta, alpha1, beta1, alpha2, beta2, p1, fecundity, q0, num_generations, num_runs)
+        
+        # return Dict(el["partition"] => get_extinction_probability_runs(el["centers"], el["partition"], delta, alpha1, beta1, alpha2, beta2, p1, fecundity, q0, num_generations, num_runs) for el in partition_results)
+        return [get_extinction_probability_runs(el["centers"], el["partition"], delta, alpha1, beta1, alpha2, beta2, p1, fecundity, q0, num_generations, num_runs) for el in partition_results]
+        
+        return results
+    end
+    
+    function find_robust_optimizer(partition_results, delta, alpha1, beta1, alpha2, beta2, p1, fecundity, q0, num_generations, num_runs)
+    
+        results = get_extinction_probability_runs(partition_results, delta, alpha1, beta1, alpha2, beta2, p1, fecundity, q0, num_generations, num_runs)
+    
+        best_index_by_run = col_argmin(results)
+        best_index = mode(best_index_by_run)
+        
+        return partition_results[best_index]
+    end
 
     ################ post-hoc analysis
     function is_close(val1, val2, tol = 1e-8)
@@ -546,7 +587,7 @@ module ExtinctionMultipatch
     
      
     #################### helper functions
-    function save_results(output, save_dir)
+    function save_results(output::Dict, save_dir)
 
         # saving
         # Convert the dictionary to JSON format
@@ -561,6 +602,25 @@ module ExtinctionMultipatch
         end
 
     end
+
+    function save_results(output::Vector, save_dir)
+
+        # saving
+        # Convert the dictionary to JSON format
+        json_data = json(output)
+
+        # Save the JSON string to a file
+        save_dir = "output/" * save_dir
+        mkpath(save_dir)
+
+        open(save_dir * "/" * "partition_output.json", "w") do file
+            write(file, json_data)
+        end
+
+    end
+
+
+
 
     ############### running everything
     # function minimize_extinction_probability(fecundity::Int64, delta::Float64, alpha1::Number, beta1::Number, alpha2::Number, beta2::Number, p1::Number, save_dir::String, population_size::Int64, partition_mutation_rate::Float64, use_educated_guess::Bool, analyze_centers::Bool, tol::Float64, args...)
@@ -722,23 +782,19 @@ module ExtinctionMultipatch
         Random.seed!(seed)
 
         partitions = get_partitions(fecundity)
-
-        extinction_probability = 10
-        output = nothing
         
-        for el in partitions
-            # print("starting", "\n", el, "\n")
-            current_output = minimize_partition_extinction_probability(el, fecundity, delta, alpha1, beta1, alpha2, beta2, p1, population_size, use_educated_guess, analyze_centers, tol, args...)
-            
-            if current_output["extinction_probability"] < extinction_probability
-                extinction_probability = current_output["extinction_probability"]
-                output = current_output
-            end
-            # print("finished", "\n", el, "\n")
-        end
+        partition_results = [minimize_partition_extinction_probability(el, fecundity, delta, alpha1, beta1, alpha2, beta2, p1, population_size, use_educated_guess, analyze_centers, tol, args...) for el in partitions]
+
+        if length(args) != 0
+            output = find_robust_optimizer(partition_results, delta, alpha1, beta1, alpha2, beta2, p1, fecundity, args...)
+        else
+            best_index = argmin(el["extinction_probability"] for el in partition_results)
+            output = partition_results[best_index]
+        end 
 
         # print("saving", "\n")
         save_results(output, save_dir)
+        save_results(partition_results, save_dir)
         # print("saved", "\n")
         return output
     end

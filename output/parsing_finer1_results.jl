@@ -7,7 +7,7 @@
 # for alpha1 = 0.9:
     # p1 = 0.5 - 0.775: two 0.9/0.1 patches 
     # p1 = 0.7 - 0.75: one 0.9/0.1 patch, two 0.9/patches
-    # p1 = 0.775 - 1, four 0.9 patches
+    # p1 = 0.8 - 1, four 0.9 patches
 # Overall, patches should either have a 0.1 and a 0.9 specialist or just a 0.9 specialist. As p1 ↑, the distributions shift from two double-specialist patches, to one double-specialist and two 0.9-specialists, to four 0.9-specialist patches. This transition happens later as alpha1 ↑.
 # nonhierarchical comparison
     # for alpha1 - 0.6: same results

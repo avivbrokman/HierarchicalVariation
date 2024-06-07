@@ -180,6 +180,10 @@ function check_optimal_partition(centers, partitions, delta, alpha1, beta1, alph
     return best_partition
 end
 
+
+
+
+
 d = Dict("a" => [1,2,3], "b" => [4,5,6])
 
 
@@ -315,3 +319,32 @@ max_population_size = 100
 num_runs = 1000000
 
 out = estimate_extinction_probability(centers, partition3, delta, alpha1, beta1, alpha2, beta2, p1, max_generations, max_population_size, num_runs)
+
+
+
+
+
+
+
+
+include("src/extinction_probability_multipatch_functions.jl")
+using .ExtinctionMultipatch
+
+fecundity = 4
+delta = 0.1
+alpha1 = 0.9
+beta1 = 1 - alpha1
+beta2 = alpha1
+alpha2 = beta1
+p1 = 0.8
+save_dir = "test"
+q0 = 0.5
+num_generations = 75
+num_runs = 100
+
+minimize_extinction_probability(fecundity, delta, alpha1, beta1, alpha2, beta2, p1, save_dir, 100, true, true, 1e-8, 0, 0.5, 75, 100)
+
+
+
+
+partition_results = [minimize_partition_extinction_probability(el, fecundity, delta, alpha1, beta1, alpha2, beta2, p1, 100, true, true, 1e-8, 0.5, 75, 100) for el in partitions]
