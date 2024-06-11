@@ -1,5 +1,6 @@
 #%% libraries
-from numpy import arange, add
+import numpy as np
+from numpy import arange, add, array
 from numpy.random import uniform
 from pandas import DataFrame, concat, Categorical
 import plotnine
@@ -102,9 +103,6 @@ rectangles = DataFrame({
 
 
 
-
-
-
  
 
 
@@ -144,7 +142,6 @@ def make_plotting_mini_dataframe(p1, centers, partition, pch_width):
     offsets = calculate_partition_shift(partition, pch_width)
     
     return DataFrame({"p1": p1s, "center": centers, "patch": partitions, "shifted_p1": add(p1s, offsets)})
-
 
 #%% rectangles
 def partition2string(partition):
@@ -197,6 +194,63 @@ def make_datasets(pattern):
     
     return data, rectangles, extinction_data
 
+def make_extinction_probability_dataset(pattern):
+    files = glob.glob(pattern, recursive = True)
+    extinction_probabilities = []
+    partitions = []
+    p1s = []
+    for file in files:
+        results = read_json(file)
+# =============================================================================
+#         print(results)
+# =============================================================================
+        for el in results:
+            print(el)
+            p1s.append(el['p1'])
+            partitions.append(partition2string(el['partition']))
+            extinction_probabilities.append(el['extinction_probability'])
+        
+    
+    extinction_data = DataFrame({"p1": p1s, "extinction_probability": extinction_probabilities, "partition": partitions})
+    
+    
+    return extinction_data
+
+
+#%% make average_dataset
+def make_plotting_mini_avg_dataframe(p1, centers, partition, pch_width):
+    fecundity = len(centers)
+    p1s = [p1] * fecundity
+    partitions = [[str(i)] * len(el) for i, el in enumerate(partition)]
+    partitions = unlist(partitions)
+    offsets = calculate_partition_shift(partition, pch_width)
+    
+    return DataFrame({"p1": p1s, "center": centers, "patch": partitions, "shifted_p1": add(p1s, offsets)})
+
+def make_avg_datasets(pattern):
+    files = glob.glob(pattern, recursive = True)
+    mini_datasets = []
+    p1_partitions = []
+    extinction_probabilities = []
+    for file in files:
+        results = read_json(file)
+        p1 = results['p1']
+        centers = results['centers']
+        partition = results['partition']
+        mini_dataset = make_plotting_mini_dataframe(p1, centers, partition, 0.006)
+        
+        mini_datasets.append(mini_dataset)
+        p1_partitions.append((p1, partition))
+        extinction_probabilities.append(results['extinction_probability'])
+        
+    data = concat(mini_datasets, ignore_index = True)  
+    
+    p1s, partitions = zip(*p1_partitions)
+    rectangles = make_rectangles(partitions, p1s)
+    extinction_data = DataFrame({"p1": p1s, "extinction_probability": extinction_probabilities})
+    
+    
+    return data, rectangles, extinction_data
 #%% plotting
 
 def plot(data, rectangles):
@@ -238,115 +292,185 @@ def plot(data, rectangles):
     print(g)
     return
 
+def extinction_plot(data):
+    g = ggplot(data, aes(x = "p1", y = "extinction_probability"))
+    g = g + geom_point(aes(color = "partition"))
+    print(g)
+    return 
 
 #%%
-pattern = 'output/finer2/hierarchical/fecundity4/delta0.1/bimodal/alpha1_0.6__p1_*/output.json'
+pattern = 'output/finer3/hierarchical/fecundity4/delta0.1/bimodal/alpha1_0.6__p1_*/output.json'
+
+data, rectangles, extinction_data = make_datasets(pattern)
+plot(data, rectangles)
+
+pattern = 'output/finer3/hierarchical/fecundity4/delta0.1/bimodal/alpha1_0.6__p1_*/partition_output.json'
+
+extinction_data = make_extinction_probability_dataset(pattern)
+extinction_plot(extinction_data)
+
+#%%
+pattern = 'output/finer3/hierarchical/fecundity4/delta0.1/bimodal/alpha1_0.9__p1_*/output.json'
 
 data, rectangles, extinction_data = make_datasets(pattern)
 plot(data, rectangles)
 plot_extinction_probability(extinction_data)
 
+pattern = 'output/finer3/hierarchical/fecundity4/delta0.1/bimodal/alpha1_0.9__p1_*/partition_output.json'
+
+extinction_data = make_extinction_probability_dataset(pattern)
+extinction_plot(extinction_data)
+
+extinction_data = make_extinction_probability_dataset(pattern)
+extinction_plot(extinction_data)
+
 #%%
-pattern = 'output/finer2/hierarchical/fecundity4/delta0.1/bimodal/alpha1_0.9__p1_*/output.json'
+pattern = 'output/finer3/hierarchical/fecundity4/delta0.1/central_mode__varying_width/alpha1_4__beta1_2__p1_*/output.json'
 
 data, rectangles, extinction_data = make_datasets(pattern)
 plot(data, rectangles)
 plot_extinction_probability(extinction_data)
 
+pattern = 'output/finer3/hierarchical/fecundity4/delta0.1/central_mode__varying_width/alpha1_4__beta1_2__p1_*/partition_output.json'
 
+extinction_data = make_extinction_probability_dataset(pattern)
+extinction_plot(extinction_data)
 #%%
-pattern = 'output/finer2/hierarchical/fecundity4/delta0.1/central_mode__varying_width/alpha1_4__beta1_2__p1_*/output.json'
+pattern = 'output/finer3/hierarchical/fecundity4/delta0.1/central_mode__varying_width/alpha1_7__beta1_3__p1_*/output.json'
 
 data, rectangles, extinction_data = make_datasets(pattern)
 plot(data, rectangles)
 plot_extinction_probability(extinction_data)
 
+pattern = 'output/finer3/hierarchical/fecundity4/delta0.1/central_mode__varying_width/alpha1_7__beta1_3__p1_*/partition_output.json'
+
+extinction_data = make_extinction_probability_dataset(pattern)
+extinction_plot(extinction_data)
+
 #%%
-pattern = 'output/finer2/hierarchical/fecundity4/delta0.1/central_mode__varying_width/alpha1_7__beta1_3__p1_*/output.json'
+pattern = 'output/finer3/hierarchical/fecundity4/delta0.1/central_mode__varying_width/alpha1_20__beta1_10__p1_*/output.json'
 
 data, rectangles, extinction_data = make_datasets(pattern)
 plot(data, rectangles)
 plot_extinction_probability(extinction_data)
 
+pattern = 'output/finer3/hierarchical/fecundity4/delta0.1/central_mode__varying_width/alpha1_20__beta1_10__p1_*/partition_output.json'
+
+extinction_data = make_extinction_probability_dataset(pattern)
+extinction_plot(extinction_data)
+
 #%%
-pattern = 'output/finer2/hierarchical/fecundity4/delta0.1/central_mode__varying_width/alpha1_20__beta1_10__p1_*/output.json'
+pattern = 'output/finer3/hierarchical/fecundity4/delta0.1/central_mode__varying_width/alpha1_23__beta1_7__p1_*/output.json'
 
 data, rectangles, extinction_data = make_datasets(pattern)
 plot(data, rectangles)
 plot_extinction_probability(extinction_data)
 
+pattern = 'output/finer3/hierarchical/fecundity4/delta0.1/central_mode__varying_width/alpha1_23__beta1_7__p1_*/partition_output.json'
+
+extinction_data = make_extinction_probability_dataset(pattern)
+extinction_plot(extinction_data)
+
 #%%
-pattern = 'output/finer2/hierarchical/fecundity4/delta0.1/central_mode__varying_width/alpha1_23__beta1_7__p1_*/output.json'
+pattern = 'output/finer3/hierarchical/fecundity4/delta0.1/extreme_mode__varying_mass_everywhere_else/beta1_0.05__p1_*/output.json'
 
 data, rectangles, extinction_data = make_datasets(pattern)
 plot(data, rectangles)
-plot_extinction_probability(extinction_data)
+
+pattern = 'output/finer3/hierarchical/fecundity4/delta0.1/extreme_mode__varying_mass_everywhere_else/beta1_0.05__p1_*/partition_output.json'
+
+extinction_data = make_extinction_probability_dataset(pattern)
+extinction_plot(extinction_data)
 
 #%%
-pattern = 'output/finer2/hierarchical/fecundity4/delta0.1/extreme_mode__varying_mass_everywhere_else/beta1_0.05__p1_*/output.json'
+pattern = 'output/finer3/hierarchical/fecundity4/delta0.1/extreme_mode__varying_mass_everywhere_else/beta1_0.95__p1_*/output.json'
 
 data, rectangles, extinction_data = make_datasets(pattern)
 plot(data, rectangles)
-plot_extinction_probability(extinction_data)
+
+pattern = 'output/finer3/hierarchical/fecundity4/delta0.1/extreme_mode__varying_mass_everywhere_else/beta1_0.95__p1_*/partition_output.json'
+
+extinction_data = make_extinction_probability_dataset(pattern)
+extinction_plot(extinction_data)
 
 #%%
-pattern = 'output/finer2/hierarchical/fecundity4/delta0.1/extreme_mode__varying_mass_everywhere_else/beta1_0.95__p1_*/output.json'
+pattern = 'output/finer3/hierarchical/fecundity4/delta0.1/extreme_mode__varying_slope/alpha1_1.8__p1_*/output.json'
 
 data, rectangles, extinction_data = make_datasets(pattern)
 plot(data, rectangles)
-plot_extinction_probability(extinction_data)
+
+pattern = 'output/finer3/hierarchical/fecundity4/delta0.1/extreme_mode__varying_slope/alpha1_1.8__p1_*/partition_output.json'
+
+extinction_data = make_extinction_probability_dataset(pattern)
+extinction_plot(extinction_data)
 
 #%%
-pattern = 'output/finer2/hierarchical/fecundity4/delta0.1/extreme_mode__varying_slope/alpha1_1.8__p1_*/output.json'
+pattern = 'output/finer3/hierarchical/fecundity4/delta0.1/extreme_mode__varying_slope/alpha1_2__p1_*/output.json'
 
 data, rectangles, extinction_data = make_datasets(pattern)
 plot(data, rectangles)
-plot_extinction_probability(extinction_data)
+
+pattern = 'output/finer3/hierarchical/fecundity4/delta0.1/extreme_mode__varying_slope/alpha1_2__p1_*/partition_output.json'
+
+extinction_data = make_extinction_probability_dataset(pattern)
+extinction_plot(extinction_data)
 
 #%%
-pattern = 'output/finer2/hierarchical/fecundity4/delta0.1/extreme_mode__varying_slope/alpha1_2__p1_*/output.json'
+pattern = 'output/finer3/hierarchical/fecundity4/delta0.1/extreme_mode__varying_slope/alpha1_3__p1_*/output.json'
 
 data, rectangles, extinction_data = make_datasets(pattern)
 plot(data, rectangles)
-plot_extinction_probability(extinction_data)
 
+pattern = 'output/finer3/hierarchical/fecundity4/delta0.1/extreme_mode__varying_slope/alpha1_3__p1_*/partition_output.json'
+
+extinction_data = make_extinction_probability_dataset(pattern)
+extinction_plot(extinction_data)
 
 #%%
-pattern = 'output/finer2/hierarchical/fecundity4/delta0.1/extreme_mode__varying_slope/alpha1_3__p1_*/output.json'
+pattern = 'output/finer3/hierarchical/fecundity4/delta0.1/extreme_mode__varying_slope/alpha1_4__p1_*/output.json'
 
 data, rectangles, extinction_data = make_datasets(pattern)
 plot(data, rectangles)
-plot_extinction_probability(extinction_data)
 
-#%%
-pattern = 'output/finer2/hierarchical/fecundity4/delta0.1/extreme_mode__varying_slope/alpha1_4__p1_*/output.json'
+pattern = 'output/finer3/hierarchical/fecundity4/delta0.1/extreme_mode__varying_slope/alpha1_4__p1_*/partition_output.json'
 
-data, rectangles, extinction_data = make_datasets(pattern)
-plot(data, rectangles)
-plot_extinction_probability(extinction_data)
+extinction_data = make_extinction_probability_dataset(pattern)
+extinction_plot(extinction_data)
 
 
 #%%
-pattern = 'output/finer2/hierarchical/fecundity4/delta0.1/extreme_mode__varying_slope/alpha1_5__p1_*/output.json'
+pattern = 'output/finer3/hierarchical/fecundity4/delta0.1/extreme_mode__varying_slope/alpha1_5__p1_*/output.json'
 
 data, rectangles, extinction_data = make_datasets(pattern)
 plot(data, rectangles)
-plot_extinction_probability(extinction_data)
+
+pattern = 'output/finer3/hierarchical/fecundity4/delta0.1/extreme_mode__varying_slope/alpha1_5__p1_*/partition_output.json'
+
+extinction_data = make_extinction_probability_dataset(pattern)
+extinction_plot(extinction_data)
 
 #%%
-pattern = 'output/finer2/hierarchical/fecundity4/delta0.1/extreme_mode__varying_slope/alpha1_7.5__p1_*/output.json'
+pattern = 'output/finer3/hierarchical/fecundity4/delta0.1/extreme_mode__varying_slope/alpha1_7.5__p1_*/output.json'
 
 data, rectangles, extinction_data = make_datasets(pattern)
 plot(data, rectangles)
-plot_extinction_probability(extinction_data)
+
+pattern = 'output/finer3/hierarchical/fecundity4/delta0.1/extreme_mode__varying_slope/alpha1_7.5__p1_*/partition_output.json'
+
+extinction_data = make_extinction_probability_dataset(pattern)
+extinction_plot(extinction_data)
 
 
 #%%
-pattern = 'output/finer2/hierarchical/fecundity4/delta0.1/extreme_mode__varying_slope/alpha1_10__p1_*/output.json'
+pattern = 'output/finer3/hierarchical/fecundity4/delta0.1/extreme_mode__varying_slope/alpha1_10__p1_*/output.json'
 
 data, rectangles, extinction_data = make_datasets(pattern)
 plot(data, rectangles)
-plot_extinction_probability(extinction_data)
+
+pattern = 'output/finer3/hierarchical/fecundity4/delta0.1/extreme_mode__varying_slope/alpha1_10__p1_*/partition_output.json'
+
+extinction_data = make_extinction_probability_dataset(pattern)
+extinction_plot(extinction_data)
 
 #%%
 
@@ -356,4 +480,18 @@ def plot_extinction_probability(extinction_data):
     print(q)
     return
 
-#%%
+#%% raw
+def get_
+
+
+#%% running raw
+pattern = 'output/finer3/hierarchical/fecundity4/delta0.1/bimodal/alpha1_0.6__p1_*/robust_output.json'
+
+files = glob.glob(pattern, recursive = True)
+raw_results = [read_json(el) for el in files]
+
+data = raw_results[0]
+data = array(data)
+np.mean(data, axis = 1)
+
+

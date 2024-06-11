@@ -556,8 +556,9 @@ module ExtinctionMultipatch
     
     function get_extinction_probability_runs(partition_results, delta, alpha1, beta1, alpha2, beta2, p1, fecundity, q0, num_generations, num_runs)
         
-        # return Dict(el["partition"] => get_extinction_probability_runs(el["centers"], el["partition"], delta, alpha1, beta1, alpha2, beta2, p1, fecundity, q0, num_generations, num_runs) for el in partition_results)
-        return [get_extinction_probability_runs(el["centers"], el["partition"], delta, alpha1, beta1, alpha2, beta2, p1, fecundity, q0, num_generations, num_runs) for el in partition_results]
+        return Dict(el["partition"] => get_extinction_probability_runs(el["centers"], el["partition"], delta, alpha1, beta1, alpha2, beta2, p1, fecundity, q0, num_generations, num_runs) for el in partition_results)
+        
+        # return [get_extinction_probability_runs(el["centers"], el["partition"], delta, alpha1, beta1, alpha2, beta2, p1, fecundity, q0, num_generations, num_runs) for el in partition_results]
         
         return results
     end
@@ -569,7 +570,7 @@ module ExtinctionMultipatch
         best_index_by_run = col_argmin(results)
         best_index = mode(best_index_by_run)
         
-        return partition_results[best_index]
+        return partition_results[best_index], results
     end
 
     ################ post-hoc analysis
@@ -603,7 +604,7 @@ module ExtinctionMultipatch
 
     end
 
-    function save_results(output::Vector, save_dir)
+    function save_partition_results(output, save_dir)
 
         # saving
         # Convert the dictionary to JSON format
@@ -614,6 +615,22 @@ module ExtinctionMultipatch
         mkpath(save_dir)
 
         open(save_dir * "/" * "partition_output.json", "w") do file
+            write(file, json_data)
+        end
+
+    end
+
+    function save_robust_results(output, save_dir)
+
+        # saving
+        # Convert the dictionary to JSON format
+        json_data = json(output)
+
+        # Save the JSON string to a file
+        save_dir = "output/" * save_dir
+        mkpath(save_dir)
+
+        open(save_dir * "/" * "robust_output.json", "w") do file
             write(file, json_data)
         end
 
@@ -777,26 +794,87 @@ module ExtinctionMultipatch
         return unique_partitions
     end
 
+    # function minimize_extinction_probability(fecundity::Int64, delta::Float64, alpha1::Number, beta1::Number, alpha2::Number, beta2::Number, p1::Number, save_dir::String, population_size::Int64, use_educated_guess::Bool, analyze_centers::Bool, tol::Float64, seed::Number = 0, args...)
+
+    #     Random.seed!(seed)
+
+    #     partitions = get_partitions(fecundity)
+        
+    #     partition_results = [minimize_partition_extinction_probability(el, fecundity, delta, alpha1, beta1, alpha2, beta2, p1, population_size, use_educated_guess, analyze_centers, tol, args...) for el in partitions]
+
+    #     if length(args) != 0
+    #         output, robust_output = find_robust_optimizer(partition_results, delta, alpha1, beta1, alpha2, beta2, p1, fecundity, args...)
+    #     else
+    #         best_index = argmin(el["extinction_probability"] for el in partition_results)
+    #         output = partition_results[best_index]
+    #     end 
+
+    #     # print("saving", "\n")
+    #     save_results(output, save_dir)
+    #     save_partition_results(partition_results, save_dir)
+    #     save_robust_results(robust_output, save_dir)
+
+    #     # print("saved", "\n")
+    #     return output
+    # end
+
     function minimize_extinction_probability(fecundity::Int64, delta::Float64, alpha1::Number, beta1::Number, alpha2::Number, beta2::Number, p1::Number, save_dir::String, population_size::Int64, use_educated_guess::Bool, analyze_centers::Bool, tol::Float64, seed::Number = 0, args...)
 
         Random.seed!(seed)
 
         partitions = get_partitions(fecundity)
         
-        partition_results = [minimize_partition_extinction_probability(el, fecundity, delta, alpha1, beta1, alpha2, beta2, p1, population_size, use_educated_guess, analyze_centers, tol, args...) for el in partitions]
+        partition_results = {partition => minimize_partition_extinction_probability(el, fecundity, delta, alpha1, beta1, alpha2, beta2, p1, population_size, use_educated_guess, analyze_centers, tol, args...) for el in partitions}
 
         if length(args) != 0
-            output = find_robust_optimizer(partition_results, delta, alpha1, beta1, alpha2, beta2, p1, fecundity, args...)
+            runs = get_extinction_probability_runs(partition_results, delta, alpha1, beta1, alpha2, beta2, p1, fecundity, args...)
+
         else
             best_index = argmin(el["extinction_probability"] for el in partition_results)
             output = partition_results[best_index]
         end 
 
         # print("saving", "\n")
-        save_results(output, save_dir)
-        save_results(partition_results, save_dir)
+        # save_results(output, save_dir)
+        save_partition_results(partition_results, save_dir)
+        save_robust_results(runs, save_dir)
+
         # print("saved", "\n")
         return output
+    end
+
+
+
+    ###
+    function get_means(runs)
+
+    end
+
+    function argmin(means)
+
+    end
+
+    function is_ambiguous(el, best_partition, runs)
+
+    end
+
+    function is_ambiguous(runs)
+        means = get_means(runs)
+        best_partition = argmin(means)
+        
+        redo_partitions = []
+        for el in keys(runs)
+            if el != best_partition
+                if 
+            end
+    end
+
+    function retry_with_higher_precision(filename::String)
+
+    end
+
+    function retry_with_higher_precision()
+
     end
 
 end
