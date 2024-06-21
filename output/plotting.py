@@ -1,6 +1,8 @@
 #%% libraries
 import numpy as np
 from numpy import arange, add, array
+from scipy import stats
+from scipy.stats import sem
 from numpy.random import uniform
 from pandas import DataFrame, concat, Categorical
 import plotnine
@@ -352,7 +354,6 @@ pattern = 'output/finer3/hierarchical/fecundity4/delta0.1/central_mode__varying_
 
 data, rectangles, extinction_data = make_datasets(pattern)
 plot(data, rectangles)
-plot_extinction_probability(extinction_data)
 
 pattern = 'output/finer3/hierarchical/fecundity4/delta0.1/central_mode__varying_width/alpha1_20__beta1_10__p1_*/partition_output.json'
 
@@ -364,7 +365,6 @@ pattern = 'output/finer3/hierarchical/fecundity4/delta0.1/central_mode__varying_
 
 data, rectangles, extinction_data = make_datasets(pattern)
 plot(data, rectangles)
-plot_extinction_probability(extinction_data)
 
 pattern = 'output/finer3/hierarchical/fecundity4/delta0.1/central_mode__varying_width/alpha1_23__beta1_7__p1_*/partition_output.json'
 
@@ -472,6 +472,100 @@ pattern = 'output/finer3/hierarchical/fecundity4/delta0.1/extreme_mode__varying_
 extinction_data = make_extinction_probability_dataset(pattern)
 extinction_plot(extinction_data)
 
+
+#%%
+
+
+def add_fine(partition_results, raw):
+    mean_dict = {key: np.mean(value) for key, value in raw.items()}
+    
+    for key, value in mean_dict.items():
+        partition_results[key]["fine_extinction_probability"] = value
+    
+
+def get_best_partition(partition_results):
+    best_extinction_probability = 2
+    for partition, results in partition_results.items():
+        if results["fine_extinction_probability"] < best_extinction_probability:
+            best_extinction_probability = results["fine_extinction_probability"]
+            best_partition_results = results
+    return best_partition_results
+
+
+#%%
+
+def make_datasets(partition_pattern, raw_pattern):
+    partition_files = glob.glob(partition_pattern, recursive = True)
+    raw_files = glob.glob(raw_pattern, recursive = True)
+    mini_datasets = []
+    p1_partitions = []
+    
+    p1s = []
+    partitions = []
+    extinction_probabilities = []
+    
+    for partition_file, raw_file in zip(partition_files, raw_files):
+        partition_results = read_json(partition_file)
+        raw_results = read_json(raw_file)
+        
+        add_fine(partition_results, raw_results)
+        
+        best_results = get_best_partition(partition_results)
+        
+        p1 = best_results['p1']
+        centers = best_results['centers']
+        partition = best_results['partition']
+        mini_dataset = make_plotting_mini_dataframe(p1, centers, partition, 0.006)
+        
+        for partition, results in partition_results.items():
+            p1s.append(results['p1'])
+            partitions.append(partition2string(results['partition']))
+            extinction_probabilities.append(results['fine_extinction_probability'])
+        
+        
+        mini_datasets.append(mini_dataset)
+        p1_partitions.append((p1, best_results['partition']))
+        #extinction_probabilities.append(results['fine_extinction_probability'])
+        
+    data = concat(mini_datasets, ignore_index = True)  
+    
+    rectangle_p1s, rectangle_partitions = zip(*p1_partitions)
+    rectangles = make_rectangles(rectangle_partitions, rectangle_p1s)
+    
+    extinction_data = DataFrame({"p1": p1s, "extinction_probability": extinction_probabilities, "partition": partitions})
+    #extinction_data = DataFrame({"p1": p1s, "extinction_probability": extinction_probabilities})
+    
+    
+    return data, rectangles, extinction_data
+
+
+
+
+
+#%%
+
+
+raw_pattern = 'output/repeated1/hierarchical/fecundity4/delta0.1/central_mode__varying_width/seed0/alpha1_20__beta1_10__p1_*/robust_output.json'
+
+partition_pattern = 'output/repeated1/hierarchical/fecundity4/delta0.1/central_mode__varying_width/seed0/alpha1_20__beta1_10__p1_*/partition_output.json'
+
+data, rectangles, extinction_data = make_datasets(partition_pattern, raw_pattern)
+plot(data, rectangles)
+extinction_plot(extinction_data)
+
+
+
+#%%
+
+
+
+
+#%%
+
+
+
+#%%
+
 #%%
 
 def plot_extinction_probability(extinction_data):
@@ -481,7 +575,44 @@ def plot_extinction_probability(extinction_data):
     return
 
 #%% raw
-def get_
+from statsmodels.stats.multicomp import pairwise_tukeyhsd
+from statsmodels.stats.multicomp import tukeyhsd
+
+
+def do_tukey(data, alpha):
+    
+    partitions = []
+    extinction_probabilities = []
+    for i, el in enumerate(data):
+        partitions += [partition2string(possible_partitions[i])] * len(el)
+        extinction_probabilities += el
+        
+    data = {'partition': partitions, 'probability': extinction_probabilities}
+    
+    df = DataFrame(data)
+    
+    tukey_result = pairwise_tukeyhsd(endog = df['probability'], groups = df['partition'], alpha = alpha)
+    
+    
+
+            
+            
+    
+    
+    data_df = DataFrame(data_dict)
+    
+    
+    pairwise_tukeyhsd()
+    return 
+def does_overlap_workhorse(data):
+    data = array(data)
+    mean = np.mean(data, axis = 1)
+    sterr = sem(data, axis = 1)
+
+
+    (mean[2] - sterr[2], mean[2] + sterr[2])
+    (mean[3] - sterr[3], mean[3] + sterr[3])
+    return
 
 
 #%% running raw
@@ -490,8 +621,13 @@ pattern = 'output/finer3/hierarchical/fecundity4/delta0.1/bimodal/alpha1_0.6__p1
 files = glob.glob(pattern, recursive = True)
 raw_results = [read_json(el) for el in files]
 
-data = raw_results[0]
+data = raw_results[5]
+data = raw_results[-2]
 data = array(data)
-np.mean(data, axis = 1)
+mean = np.mean(data, axis = 1)
+sterr = sem(data, axis = 1)
+
+(mean[2] - sterr[2], mean[2] + sterr[2])
+(mean[3] - sterr[3], mean[3] + sterr[3])
 
 

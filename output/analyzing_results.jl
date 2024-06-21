@@ -35,7 +35,7 @@ end
 alpha1 = 0.9
 p1s = 0.5:1/40:1
 for p1 in p1s
-    file_path = "output/finer1/hierarchical/fecundity4/delta0.1/bimodal/alpha1_$(alpha1)__p1_$p1/output.json"
+    file_path = "output/finer2/hierarchical/fecundity4/delta0.1/bimodal/alpha1_$(alpha1)__p1_$p1/output.json"
     fancy_print(file_path, p1)
 end
 

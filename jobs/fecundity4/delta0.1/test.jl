@@ -341,10 +341,57 @@ save_dir = "test"
 q0 = 0.5
 num_generations = 75
 num_runs = 100
+population_size = 100
+using Random
+seed = 0
 
-minimize_extinction_probability(fecundity, delta, alpha1, beta1, alpha2, beta2, p1, save_dir, 100, true, true, 1e-8, 0, 0.5, 75, 100)
+out = minimize_extinction_probability(fecundity, delta, alpha1, beta1, alpha2, beta2, p1, save_dir, 100, true, true, 1e-8, 0, 0.5, 75, 100)
+
+
 
 
 
 
 partition_results = [minimize_partition_extinction_probability(el, fecundity, delta, alpha1, beta1, alpha2, beta2, p1, 100, true, true, 1e-8, 0.5, 75, 100) for el in partitions]
+
+
+function col_argmax(matrix::Matrix)
+    cartesian_argmax = argmax(matrix, dims = 1)
+    return [el[1] for el in cartesian_argmax]
+end
+
+function col_argmax(data::Vector{Vector{Float64}})
+    matrix = hcat(data...)
+    matrix = transpose(matrix)
+    
+    return col_argmax(matrix)
+end
+
+matrix = collect(matrix)
+best_index_by_run = col_argmax(matrix)
+
+best_index = mode(best_index_by_run)
+
+
+
+
+
+col_argmax(collect(values(results)))
+
+
+r = values(results)
+rr = collect(r)
+
+matrix = hcat(rr...)
+
+typeof(matrix)
+matrix = collect(transpose(matrix))
+typeof(matrix)
+
+print(3)
+
+
+
+out = minimize_extinction_probability(4, 0.1, 7, 3, 3, 7, 0.8, "test13", 100, true, true, 1e-4, 0, 1000, 0.05, 0.5, 75, 100)
+
+minimize_partition_extinction_probability(partitions[1], fecundity, delta, alpha1, beta1, alpha2, beta2, p1, population_size, use_educated_guess, analyze_centers, tol, rng, args...)

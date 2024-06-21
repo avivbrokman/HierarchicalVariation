@@ -14,7 +14,7 @@ for alpha1 in alpha1s
         alpha2 = beta1
         beta2 = alpha1
 
-        save_dir = "finer2/hierarchical/fecundity$(fecundity)/delta$(delta)/bimodal/alpha1_$(alpha1)__p1_$(p1)"
+        save_dir = "finer3/hierarchical/fecundity$(fecundity)/delta$(delta)/bimodal/alpha1_$(alpha1)__p1_$(p1)"
 
         minimize_extinction_probability(fecundity, delta, alpha1, beta1, alpha2, beta2, p1, save_dir, 100, true, true, 1e-8, 0, 0.5, 75, 100)
     end
@@ -41,7 +41,7 @@ for pair in pairs_
         alpha2 = beta1
         beta2 = alpha1
 
-        save_dir = "finer2/hierarchical/fecundity$(fecundity)/delta$(delta)/central_mode__varying_width/alpha1_$(alpha1)__beta1_$(beta1)__p1_$(p1)"
+        save_dir = "finer3/hierarchical/fecundity$(fecundity)/delta$(delta)/central_mode__varying_width/alpha1_$(alpha1)__beta1_$(beta1)__p1_$(p1)"
 
         minimize_extinction_probability(fecundity, delta, alpha1, beta1, alpha2, beta2, p1, save_dir, 100, true, true, 1e-8, 0, 0.5, 75, 100)
     end
@@ -63,7 +63,7 @@ for beta1 in beta1s
         alpha2 = beta1
         beta2 = alpha1
 
-        save_dir = "finer2/hierarchical/fecundity$(fecundity)/delta$(delta)/extreme_mode__varying_mass_everywhere_else/beta1_$(beta1)__p1_$(p1)"
+        save_dir = "finer3/hierarchical/fecundity$(fecundity)/delta$(delta)/extreme_mode__varying_mass_everywhere_else/beta1_$(beta1)__p1_$(p1)"
 
         minimize_extinction_probability(fecundity, delta, alpha1, beta1, alpha2, beta2, p1, save_dir, 100, true, true, 1e-8, 0, 0.5, 75, 100)
     end
@@ -87,11 +87,12 @@ for (alpha1, p1s) in pairs(alpha1_p1_combs)
         alpha2 = beta1
         beta2 = alpha1
 
-        save_dir = "finer2/hierarchical/fecundity$(fecundity)/delta$(delta)/extreme_mode__varying_slope/alpha1_$(alpha1)__p1_$(p1)"
+        save_dir = "finer3/hierarchical/fecundity$(fecundity)/delta$(delta)/extreme_mode__varying_slope/alpha1_$(alpha1)__p1_$(p1)"
 
         minimize_extinction_probability(fecundity, delta, alpha1, beta1, alpha2, beta2, p1, save_dir, 100, true, true, 1e-8, 0, 0.5, 75, 100)
     end
 end
+
 
 
 

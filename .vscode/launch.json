@@ -26,6 +26,13 @@
             "cwd": "${workspaceFolder}",
             "juliaEnv": "~/Documents/Kentucky/Grad School/ms_project/branching1" 
         },
+        {
+            "type": "julia",
+            "request": "launch",
+            "name": "test2",
+            "program": "/Users/avivbrokman/Documents/Kentucky/Grad School/ms_project/branching1/jobs/fecundity4/delta0.1/test2.jl",
+            "stopOnEntry": false
+        }
         
     ]
 }

@@ -1,6 +1,7 @@
 
 module ExtinctionMultipatch
 
+#%% ######## preliminaries
     using Intervals
     using Distributions
     using Polynomials
@@ -18,10 +19,11 @@ module ExtinctionMultipatch
     using ForwardDiff
     using StatsBase
     using Profile
+    using HypothesisTests
 
     export survival_interval, get_survival_intervals, segment_unit_interval_by_survival_overlap, get_segment_survival_counts, get_segment_probability, get_segment_probabilities, get_probabilities_in_patch_given_H, get_probabilities_given_H, get_probabilities, probabilities2extinction_coefficients!, get_extinction_probability_from_coefficients, get_extinction_probability, multiply_simulate_extinction_probability
     
-    export f_eps, generate_environment_sequence, approximate_extinction_probability
+    export f_eps, generate_environment_sequence, get_probabilities_by_environment, approximate_extinction_probability
 
     export make_objective_function, get_idx2partition, initialize_population
     
@@ -32,8 +34,8 @@ module ExtinctionMultipatch
     export save_results, minimize_extinction_probability, minimize_partition_extinction_probability, get_partitions, partition2signature
 
     # export Beta, Interval, cdf, Polynomial, roots
-
-    ############### Basic calculations
+#%% ############### Basic calculations
+    
     ## segmenting (0,1) by how many offspring survive in the patch for a given environmental value
     function survival_interval(center, delta)
         left = max(center - delta, 0)
@@ -153,10 +155,15 @@ module ExtinctionMultipatch
         return val
     end
     
-    function generate_environment_sequence(p1, num_generations)
+    function generate_environment_sequence(p1, num_generations, rng)
         # print("generate environment sequence")
-        return StatsBase.sample([1,2], Weights([p1, 1 - p1]), num_generations, replace = true)
+        return StatsBase.sample(rng, [1,2], Weights([p1, 1 - p1]), num_generations, replace = true)
     end
+    
+    # function generate_environment_sequence(p1, num_generations)
+    #     # print("generate environment sequence")
+    #     return StatsBase.sample([1,2], Weights([p1, 1 - p1]), num_generations, replace = true)
+    # end
 
     function approximate_extinction_probability(probabilities_by_environment, q0, environments::Vector{Int64})
         # print("approximate_extinction_probability 11111")
@@ -169,9 +176,15 @@ module ExtinctionMultipatch
         return q
     end
 
-    function approximate_extinction_probability(probabilities_by_environment, q0, p1, num_generations)
+    function approximate_extinction_probability(probabilities_by_environment, q0, p1, num_generations, rng::AbstractRNG)
+
+        # this setting allows us to set a seed if we want to run this function by itself, for whatever reason. Mostly, we won't set the seed.
+        # if !isnothing(seed)
+        #     Random.seed!(seed)
+        # end
+        
         # print("approximate_extinction_probability 22222")
-        environments = generate_environment_sequence(p1, num_generations)
+        environments = generate_environment_sequence(p1, num_generations, rng)
         q = q0
         for el in environments
             q = f_eps(q, el, probabilities_by_environment)
@@ -180,23 +193,43 @@ module ExtinctionMultipatch
         return q
     end
 
-    function multiply_simulate_extinction_probability(probabilities_by_environment, q0, p1, num_generations, num_runs)
+    function approximate_extinction_probability(probabilities_by_environment, q0, p1, num_generations, seed::Int)
+        rng = MersenneTwister(seed)
+        return approximate_extinction_probability(probabilities_by_environment, q0, p1, num_generations, rng)
+    end
 
-        extinction_probability_runs = [approximate_extinction_probability(probabilities_by_environment, q0, p1, num_generations) for _ in 1:num_runs]
+    function multiply_simulate_extinction_probability(probabilities_by_environment, q0, p1, num_generations, num_runs, rng::AbstractRNG)
+        
+        # This setting allows us to set a seed for estimating extinction probability, if we want to. But we won't be setting it for each approximate_extinction_probability() run. Still, mostly, we won't set it.
+        # if !isnothing(seed)
+        #     Random.seed!(seed)
+        # end
+
+        extinction_probability_runs = [approximate_extinction_probability(probabilities_by_environment, q0, p1, num_generations, rng) for _ in 1:num_runs]
 
         return extinction_probability_runs
     end
 
+    function multiply_simulate_extinction_probability(probabilities_by_environment, q0, p1, num_generations, num_runs, seed::Int)
+        rng = MersenneTwister(seed)
+        return multiply_simulate_extinction_probability(probabilities_by_environment, q0, p1, num_generations, num_runs, rng)
+    end
 
-    function approximate_extinction_probability(probabilities_by_environment, q0, p1, num_generations, num_runs)
-        # print("approximate 33333")
+    function approximate_extinction_probability(probabilities_by_environment, q0, p1, num_generations, num_runs, rng::AbstractRNG)
 
-        extinction_probability_runs = multiply_simulate_extinction_probability(probabilities_by_environment, q0, p1, num_generations, num_runs)
+        extinction_probability_runs = multiply_simulate_extinction_probability(probabilities_by_environment, q0, p1, num_generations, num_runs, rng)
 
         extinction_probability = mean(extinction_probability_runs)
 
         return extinction_probability
     end
+
+    function approximate_extinction_probability(probabilities_by_environment, q0, p1, num_generations, num_runs, seed::Int)
+
+        rng = MersenneTwister(seed)
+        return approximate_extinction_probability(probabilities_by_environment, q0, p1, num_generations, num_runs, rng)
+    end
+
 
     function get_probabilities_by_environment(centers, partition, delta, alpha1, beta1, alpha2, beta2, fecundity) 
 
@@ -229,7 +262,7 @@ module ExtinctionMultipatch
         return probabilities_by_environment
     end
     
-
+    # nonhierarchical variation
     function get_extinction_probability(centers, partition, delta, alpha1, beta1, alpha2, beta2, p1, fecundity) 
         
         probabilities_by_environment = get_probabilities_by_environment(centers, partition, delta, alpha1, beta1, alpha2, beta2, fecundity)
@@ -243,16 +276,20 @@ module ExtinctionMultipatch
         return extinction_probability
     end
 
-    function get_extinction_probability(centers, partition, delta, alpha1, beta1, alpha2, beta2, p1, fecundity, q0, num_generations, num_runs) 
+    function get_extinction_probability(centers, partition, delta, alpha1, beta1, alpha2, beta2, p1, fecundity, q0, num_generations, num_runs, rng::AbstractRNG) 
         
         probabilities_by_environment = get_probabilities_by_environment(centers, partition, delta, alpha1, beta1, alpha2, beta2, fecundity)
 
-        extinction_probability = approximate_extinction_probability(probabilities_by_environment, q0, p1, num_generations, num_runs)
+        extinction_probability = approximate_extinction_probability(probabilities_by_environment, q0, p1, num_generations, num_runs, rng)
 
         return extinction_probability
     end
 
-    ################### Necessary for running DE
+    function get_extinction_probability(centers, partition, delta, alpha1, beta1, alpha2, beta2, p1, fecundity, q0, num_generations, num_runs, seed::Int)
+        rng = MersenneTwister(seed)
+        return get_extinction_probability(centers, partition, delta, alpha1, beta1, alpha2, beta2, p1, fecundity, q0, num_generations, num_runs, rng)
+    end
+#%% ################### Necessary for running DE
     ## using a closure as a workaround because DE's objective function must take a single vector as input
     function make_objective_function(fecundity::Int64, delta::Float64, alpha1::Number, beta1::Number, alpha2::Number, beta2::Number, p1::Number, idx2partition::Dict, args...)
         function objective_function(vars)
@@ -295,8 +332,7 @@ module ExtinctionMultipatch
 
         return initial_population
     end
-
-    #################### Educated guessing
+#%% #################### Educated guessing
 
     function survival_probability(center, delta, alpha, beta)
         dist = Beta(alpha, beta)
@@ -529,8 +565,8 @@ module ExtinctionMultipatch
         end
         return centers, extinction_probability
     end
+#%% #################### robust comparison across partitions   
     
-    ####### robust comparison across partitions
     function col_argmin(matrix::Matrix)
         cartesian_argmin = argmin(matrix, dims = 1)
         return [el[1] for el in cartesian_argmin]
@@ -543,29 +579,44 @@ module ExtinctionMultipatch
         return col_argmin(matrix)
     end
     
-    function get_extinction_probability_runs(centers, partition, delta, alpha1, beta1, alpha2, beta2, p1, fecundity, q0, num_generations, num_runs)
+    # for a single partition
+    function get_extinction_probability_runs(centers, partition, delta, alpha1, beta1, alpha2, beta2, p1, fecundity, q0, num_generations, num_runs, rng::AbstractRNG)
         
-        Random.seed!(1)
+        # Random.seed!(seed)
 
         probabilities_by_environment = get_probabilities_by_environment(centers, partition, delta, alpha1, beta1, alpha2, beta2, fecundity) 
 
-        runs = multiply_simulate_extinction_probability(probabilities_by_environment, q0, p1, num_generations, num_runs)
+        runs = multiply_simulate_extinction_probability(probabilities_by_environment, q0, p1, num_generations, num_runs, rng)
             
         return runs
     end
+
+    function get_extinction_probability_runs(centers, partition, delta, alpha1, beta1, alpha2, beta2, p1, fecundity, q0, num_generations, num_runs, seed::Int)
+
+        rng = MersenneTwister(seed)
+
+        return get_extinction_probability_runs(centers, partition, delta, alpha1, beta1, alpha2, beta2, p1, fecundity, q0, num_generations, num_runs, rng)
+    end
     
-    function get_extinction_probability_runs(partition_results, delta, alpha1, beta1, alpha2, beta2, p1, fecundity, q0, num_generations, num_runs)
-        
-        return Dict(el["partition"] => get_extinction_probability_runs(el["centers"], el["partition"], delta, alpha1, beta1, alpha2, beta2, p1, fecundity, q0, num_generations, num_runs) for el in partition_results)
+    # for all partitions
+    function get_extinction_probability_runs(partition_results, delta, alpha1, beta1, alpha2, beta2, p1, fecundity, q0, num_generations, num_runs, rng::AbstractRNG)
+
+        return Dict(key => get_extinction_probability_runs(value["centers"], key, delta, alpha1, beta1, alpha2, beta2, p1, fecundity, q0, num_generations, num_runs, copy(rng)) for (key, value) in partition_results)
         
         # return [get_extinction_probability_runs(el["centers"], el["partition"], delta, alpha1, beta1, alpha2, beta2, p1, fecundity, q0, num_generations, num_runs) for el in partition_results]
         
         return results
     end
+
+    function get_extinction_probability_runs(partition_results, delta, alpha1, beta1, alpha2, beta2, p1, fecundity, q0, num_generations, num_runs, seed::Int)
+
+        rng = MersenneTwister(seed)
+        return get_extinction_probability_runs(partition_results, delta, alpha1, beta1, alpha2, beta2, p1, fecundity, q0, num_generations, num_runs, rng)
+    end
     
-    function find_robust_optimizer(partition_results, delta, alpha1, beta1, alpha2, beta2, p1, fecundity, q0, num_generations, num_runs)
+    function find_robust_optimizer(partition_results, delta, alpha1, beta1, alpha2, beta2, p1, fecundity, q0, num_generations, num_runs, rng)
     
-        results = get_extinction_probability_runs(partition_results, delta, alpha1, beta1, alpha2, beta2, p1, fecundity, q0, num_generations, num_runs)
+        results = get_extinction_probability_runs(partition_results, delta, alpha1, beta1, alpha2, beta2, p1, fecundity, q0, num_generations, num_runs, rng)
     
         best_index_by_run = col_argmin(results)
         best_index = mode(best_index_by_run)
@@ -573,7 +624,7 @@ module ExtinctionMultipatch
         return partition_results[best_index], results
     end
 
-    ################ post-hoc analysis
+#%%    ################ post-hoc analysis
     function is_close(val1, val2, tol = 1e-8)
         return abs(val1 - val2) < tol
     end
@@ -586,8 +637,7 @@ module ExtinctionMultipatch
         return [find_matches(el, special_centers, descriptions, tol) for el in centers]
     end
     
-     
-    #################### helper functions
+#%%    #################### helper functions
     function save_results(output::Dict, save_dir)
 
         # saving
@@ -637,9 +687,7 @@ module ExtinctionMultipatch
     end
 
 
-
-
-    ############### running everything
+#%%    ############### old running everything
     # function minimize_extinction_probability(fecundity::Int64, delta::Float64, alpha1::Number, beta1::Number, alpha2::Number, beta2::Number, p1::Number, save_dir::String, population_size::Int64, partition_mutation_rate::Float64, use_educated_guess::Bool, analyze_centers::Bool, tol::Float64, args...)
         
     #     Random.seed!(0)
@@ -697,10 +745,19 @@ module ExtinctionMultipatch
 
     #     return output
     # end
-
-    function minimize_partition_extinction_probability(partition::Vector{Vector{Int64}}, fecundity::Int64, delta::Float64, alpha1::Number, beta1::Number, alpha2::Number, beta2::Number, p1::Number, population_size::Int64, use_educated_guess::Bool, analyze_centers::Bool, tol::Float64, args...)
+#%% running everything
+    # args are (q0, num_generations, num_runs, seed)
+    function minimize_partition_extinction_probability(partition::Vector{Vector{Int64}}, fecundity::Int64, delta::Float64, alpha1::Number, beta1::Number, alpha2::Number, beta2::Number, p1::Number, population_size::Int64, use_educated_guess::Bool, analyze_centers::Bool, tol::Float64, rng::AbstractRNG, args...)
+        
+        # if !isnothing(seed)
+        #     Random.seed!(seed)
+        # end
+        
 
         # idx2partition = get_idx2partition(fecundity)
+        if length(args) > 0
+            args = (args..., rng)
+        end
 
         objective_function = make_objective_function(partition, fecundity, delta, alpha1, beta1, alpha2, beta2, p1, args...)
 
@@ -712,7 +769,7 @@ module ExtinctionMultipatch
         de_algorithm = Evolutionary.DE(populationSize = population_size)
 
         # results = Evolutionary.optimize(objective_function, constraints, de_algorithm, Evolutionary.Options(iterations = 1))
-        results = Evolutionary.optimize(objective_function, constraints, de_algorithm)
+        results = Evolutionary.optimize(objective_function, constraints, de_algorithm, Evolutionary.Options(rng = rng))
 
         # exctract results
         centers = results.minimizer[1:fecundity]
@@ -818,16 +875,17 @@ module ExtinctionMultipatch
     #     return output
     # end
 
-    function minimize_extinction_probability(fecundity::Int64, delta::Float64, alpha1::Number, beta1::Number, alpha2::Number, beta2::Number, p1::Number, save_dir::String, population_size::Int64, use_educated_guess::Bool, analyze_centers::Bool, tol::Float64, seed::Number = 0, args...)
+    function minimize_extinction_probability(fecundity::Int64, delta::Float64, alpha1::Number, beta1::Number, alpha2::Number, beta2::Number, p1::Number, save_dir::String, population_size::Int64, use_educated_guess::Bool, analyze_centers::Bool, tol::Float64, seed::Number = 0, max_runs::Int = 1000, p_cutoff::Float64 = 0.05, args...)
 
-        Random.seed!(seed)
+        rng = MersenneTwister(seed)
 
         partitions = get_partitions(fecundity)
         
-        partition_results = {partition => minimize_partition_extinction_probability(el, fecundity, delta, alpha1, beta1, alpha2, beta2, p1, population_size, use_educated_guess, analyze_centers, tol, args...) for el in partitions}
+        partition_results = Dict(el => minimize_partition_extinction_probability(el, fecundity, delta, alpha1, beta1, alpha2, beta2, p1, population_size, use_educated_guess, analyze_centers, tol, rng, args...) for el in partitions)
 
         if length(args) != 0
-            runs = get_extinction_probability_runs(partition_results, delta, alpha1, beta1, alpha2, beta2, p1, fecundity, args...)
+            
+            output = improve_precision(partition_results, max_runs, fecundity, delta, alpha1, beta1, alpha2, beta2, p1, args..., p_cutoff, rng)
 
         else
             best_index = argmin(el["extinction_probability"] for el in partition_results)
@@ -837,44 +895,79 @@ module ExtinctionMultipatch
         # print("saving", "\n")
         # save_results(output, save_dir)
         save_partition_results(partition_results, save_dir)
-        save_robust_results(runs, save_dir)
+        save_robust_results(output, save_dir)
 
         # print("saved", "\n")
         return output
     end
 
 
-
+#%% More robust comparisons
     ###
     function get_means(runs)
-
+        return Dict(key => mean(value) for (key, value) ∈ runs)
     end
 
-    function argmin(means)
 
+    function is_ambiguous(best_partition, other_partition, runs, p_cutoff)
+        output = UnequalVarianceTTest(runs[best_partition], runs[other_partition])
+        p = pvalue(output)
+        return p < p_cutoff
     end
 
-    function is_ambiguous(el, best_partition, runs)
-
-    end
-
-    function is_ambiguous(runs)
+    function get_ambiguous_partitions(runs, p_cutoff)
         means = get_means(runs)
         best_partition = argmin(means)
         
         redo_partitions = []
-        for el in keys(runs)
+        for el ∈ keys(runs)
             if el != best_partition
-                if 
+                if is_ambiguous(best_partition, el, runs, p_cutoff)
+                    push!(redo_partitions, el)
+                end
             end
+        end
+        if length(redo_partitions) != 0
+            push!(best_partition)
+            return redo_partitions
+        else
+            return nothing
+        end
     end
 
-    function retry_with_higher_precision(filename::String)
-
+    function dict_append!(old_dict, new_dict)
+        for (key, value) ∈ new_dict
+            append!(old_dict[key], value)
+        end
     end
 
-    function retry_with_higher_precision()
+    function improve_precision!(runs::Dict, partition_results, max_runs, p_cutoff, delta, alpha1, beta1, alpha2, beta2, p1, fecundity, q0, num_generations, num_runs, rng)
 
+        # rng = MersenneTwister()
+
+        ambiguous_partitions = get_ambiguous_partitions(runs, p_cutoff)
+        current_runs = maximum(length(el) for el in values(runs))
+
+
+        if isnothing(ambiguous_partitions) || current_runs >= max_runs
+            return runs
+        else
+            ambiguous_partition_results = Dict(key => value for (key, value) in partition_results if key ∈ ambiguous_partitions)
+            
+            new_runs = get_extinction_probability_runs(ambiguous_partition_results, delta, alpha1, beta1, alpha2, beta2, p1, fecundity, q0, num_generations, num_runs, rng)
+
+            dict_append!(runs, new_runs)
+
+            improve_precision!(runs, partition_results, max_runs, p_cutoff, delta, alpha1, beta1, alpha2, beta2, p1, fecundity, q0, num_generations, num_runs, rng)
+        end
     end
 
+    function improve_precision(partition_results, max_runs, fecundity, delta, alpha1, beta1, alpha2, beta2, p1, q0, num_generations, num_runs, p_cutoff, rng)
+
+        runs = get_extinction_probability_runs(partition_results, delta, alpha1, beta1, alpha2, beta2, p1, fecundity, q0, num_generations, num_runs, rng)
+
+        improve_precision!(runs, partition_results, max_runs, p_cutoff, delta, alpha1, beta1, alpha2, beta2, p1, fecundity, q0, num_generations, num_runs, rng)
+
+        return runs
+    end
 end
